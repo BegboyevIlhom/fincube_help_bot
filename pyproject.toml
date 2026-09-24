@@ -1,0 +1,17 @@
+# Bu fayl Vercel'ga ikkita narsani aytadi:
+# 1) qaysi kutubxonalar o'rnatilishi kerak
+# 2) qaysi fayl bosh kirish nuqtasi (entrypoint) ekanligi
+[project]
+name = "fincube-support-bot"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.117.1",   # veb-server yaratish uchun asosiy kutubxona
+    "requests>=2.32.3",   # Telegram va Supabase'ga HTTP so'rov yuborish uchun
+    "supabase>=2.9.1",    # Supabase (Postgres) ma'lumotlar bazasi bilan ishlash uchun
+    "google-auth>=2.35.0",  # Google Sheets'ga xizmat hisobi (Service Account) orqali kirish uchun
+]
+
+[tool.vercel]
+# api/index.py faylidagi "app" nomli FastAPI obyekti — bosh kirish nuqtamiz
+entrypoint = "api.index:app"

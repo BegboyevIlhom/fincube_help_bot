@@ -1,0 +1,6 @@
+# Vercel serverless funksiyalarni ishga tushirish uchun kerakli kutubxonalar
+fastapi==0.117.1
+# Telegram va Supabase'ga HTTP so'rov yuborish uchun
+requests==2.32.3
+# Supabase (Postgres) bilan ishlash uchun rasmiy Python kutubxonasi
+supabase==2.9.1
