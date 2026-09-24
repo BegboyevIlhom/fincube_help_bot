@@ -52,7 +52,7 @@ def bitta_zayavkani_tekshir(zayavka):
 def majburiy_signal_yubor(zayavka):
     # oxirgi 5 daqiqa qolganda — BAND bo'lganlar ham jumladan, FAQAT rol='xodim' bo'lganlarga
     # BITTA majburiy xabar yuboriladi (owner va super_user bu yerga kirmaydi)
-    barcha = [x for x in db.barcha_xodimlar() if x.get("rol") == "xodim"]  # faqat oddiy xodimlar
+    barcha = [x for x in db.barcha_xodimlar() if x.get("rol") != "owner"]  # "owner"dan boshqa hamma (ishlaydiganlar)
     belgilar = tg.xodimlarni_belgila(barcha)  # hammasini bitta qatorda belgilaymiz
     tg.xabar_yubor(
         zayavka["guruh_chat_id"],

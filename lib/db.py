@@ -47,12 +47,12 @@ def xodim_holatini_yangila(xodim_id, holat, joriy_zayavka_id=None):
 
 
 def bosh_xodimlar():
-    # holati 'bosh' bo'lgan xodimlarni qaytaradi — FAQAT rol='xodim' bo'lganlar
-    # ("owner" va "super_user" guruhda avtomatik tag qilinmaydi, lekin xohlasa Mini App orqali
-    # baribir qabul qilaveradi — bu shunchaki guruhdagi bildirishnoma ro'yxatiga kirmaydi, xolos)
+    # holati 'bosh' bo'lgan xodimlarni qaytaradi — rol='xodim' YOKI rol='super_user' bo'lganlar
+    # ("owner" esa faqat kuzatuvchi — hech qachon ishlamaydi, shuning uchun guruhda tag qilinmaydi
+    # va navbatga ham qo'yilmaydi)
     natija = (_client.table("xodimlar").select("*")
               .eq("holat", "bosh")
-              .eq("rol", "xodim")
+              .in_("rol", ["xodim", "super_user"])
               .execute())
     return natija.data
 
@@ -213,7 +213,7 @@ def statistika():
     # rahbarlar paneli uchun barcha kerakli raqamlarni bitta joyga yig'ib qaytaradi
     return {
         # "super_user" roli bu ro'yxatda ko'rsatilmaydi — u kuzatuvchi/admin, oddiy xodim emas
-        "xodimlar": [x for x in barcha_xodimlar() if x.get("rol") != "super_user"],
+        "xodimlar": [x for x in barcha_xodimlar() if x.get("rol") != "owner"],
         "hozir_consultatsiyada": sonini_ol("jarayonda"),  # ayni damda gaplashilayotgan mijozlar soni
         "navbatda_kutmoqda": sonini_ol("navbatda"),  # hali xodim tayinlanmagan, kutayotgan mijozlar soni
         "bugun_jami_murojaat": (
@@ -288,7 +288,7 @@ def xodimlar_analitikasi():
     # har bir xodim uchun: bugun nechta consultatsiya bergani va har biriga o'rtacha necha daqiqa
     # ("qabul qildim" bosilgandan "consultatsiya berdim" bosilgungacha) ketganini hisoblaydi
     # DIQQAT: "super_user" roli bu ro'yxatda ko'rsatilmaydi (u oddiy xodim emas, kuzatuvchi/admin)
-    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "super_user"]
+    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "owner"]
     yozuvlar = bugungi_tugallangan_yozuvlar()  # bugun yakunlangan barcha consultatsiyalar
 
     guruhlangan = {}  # xodim_id -> [daqiqalar ro'yxati]
@@ -433,7 +433,7 @@ def app_panel_malumoti(rol):
 
     if rol in ("owner", "super_user"):  # faqat owner va super_user uchun qo'shimcha bo'limlar
         # "super_user" roli bu yerda KO'RSATILMAYDI — u kuzatuvchi/admin, oddiy xodim sifatida sanalmaydi
-        natija["xodimlar_holati"] = [x for x in barcha if x.get("rol") != "super_user"]
+        natija["xodimlar_holati"] = [x for x in barcha if x.get("rol") != "owner"]
         natija["analitika"] = xodimlar_analitikasi()  # 7) har bir xodimning o'rtacha gaplashish vaqti
         natija["xodimlar_reytingi"] = xodimlar_reytingi()  # 8) mijozlar bergan yulduzcha reytingi
         natija["yonalishlar_statistikasi"] = yonalishlar_statistikasi()  # 9) eng ko'p so'ralgan yo'nalish
@@ -577,7 +577,7 @@ def eskirgan_baholashlar(necha_kun_oldin_iso):
 def xodimlar_reytingi():
     # har bir xodimning mijozlar tomonidan berilgan BARCHA (butun davr bo'yicha) o'rtacha yulduzcha
     # bahosini va nechta baho olganini hisoblaydi — "super_user" bu ro'yxatda ko'rsatilmaydi
-    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "super_user"]
+    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "owner"]
 
     baholashlar = (_client.table("baholashlar").select("xodim_id, yulduz")
                    .eq("holat", "baholandi").execute()).data  # faqat javob berilgan baholarni olamiz
@@ -639,7 +639,7 @@ def oylik_hisobot():
     # har bir xodim uchun SHU OY (1-kunidan hozirgacha) bo'yicha umumiy hisobotni tayyorlaydi:
     # nechta mijoz bilan gaplashgani, jami necha daqiqa/soat, nechta izoh, nechtasi ijobiy/salbiy,
     # va jami yig'gan yulduzchalari soni
-    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "super_user"]  # super_user kirmaydi
+    barcha = [x for x in barcha_xodimlar() if x.get("rol") != "owner"]  # "owner" (faqat kuzatuvchi) kirmaydi
     boshlanish = oy_boshlanish_vaqti()
 
     # SHU OY ICHIDA TUGALLANGAN zayavkalar — gaplashish vaqtini va mijozlar sonini hisoblash uchun

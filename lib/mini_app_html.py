@@ -375,7 +375,7 @@ async function yukla() {
     const kuzatuvchimi = rol === 'owner';
     const ownerKurishHuquqiBormi = (rol === 'owner' || rol === 'super_user');
 
-    // "Boshqaruv" tabini faqat owner/super_user ko'radi; xodimga umuman ko'rinmaydi
+    // "Boshqaruv" tabini faqat owner/super_user ko'radi; oddiy xodimga umuman ko'rinmaydi
     const boshqaruvTabi = document.getElementById('tab-boshqaruv');
     boshqaruvTabi.style.display = ownerKurishHuquqiBormi ? 'block' : 'none';
 
