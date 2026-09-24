@@ -46,6 +46,23 @@ async def xabarni_qayta_ishla(xabar):
     if not matn:  # agar xabarda matn bo'lmasa (masalan rasm yoki stiker bo'lsa)
         return  # hozircha bunday xabarlarni e'tiborsiz qoldiramiz
 
+    # MUHIM: agar mijoz shunchaki biror ODAMGA (masalan xodimga, skrinshot yoki tushunarsiz joyni
+    # so'rab) TO'G'RIDAN-TO'G'RI javob (reply) yozayotgan bo'lsa — bu YANGI support so'rovi emas,
+    # oddiy suhbat. Botni bunga aralashtirmaymiz. FARQ: agar bu BOTNING O'ZINING xabariga
+    # (masalan "INN va telefon raqamingizni yuboring" degan so'rovimizga) javob bo'lsa — bu odatiy,
+    # kutilgan holat, shuning uchun bunday holatda jarayonni davom ettiramiz
+    javob_berilgan_xabar = xabar.get("reply_to_message")
+    if javob_berilgan_xabar and not javob_berilgan_xabar.get("from", {}).get("is_bot"):
+        print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
+        return
+
+    # xuddi shunday: agar xabarda kimnidir @ bilan belgilab chaqirish (mention) bo'lsa — bu ham
+    # to'g'ridan-to'g'ri kimgadir qaratilgan xabar, umumiy support so'rovi emas
+    mentionlar_bormi = any(e.get("type") in ("mention", "text_mention") for e in xabar.get("entities", []))
+    if mentionlar_bormi:
+        print("E'TIBORSIZ QOLDIRILDI: xabarda @belgilash (mention) bor")
+        return
+
     # agar xabarni xodimlardan biri yozgan bo'lsa — bu mijoz murojaati emas, shuning uchun e'tiborsiz qoldiramiz
     aniqlangan_xodim = db.xodim_topilsin(yuboruvchi_id)
     if aniqlangan_xodim:
