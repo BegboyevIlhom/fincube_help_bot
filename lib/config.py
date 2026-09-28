@@ -10,8 +10,11 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 # Telegram Bot API manzili, tokenni ichiga qo'shib tayyorlab qo'yamiz
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-# FINCUBE support guruhining Telegram chat ID raqami (manfiy son bo'ladi, masalan -1001234567890)
-SUPPORT_GROUP_ID = int(os.environ.get("SUPPORT_GROUP_ID", "0"))
+# FINCUBE support guruh(lar)ining Telegram chat ID raqami (manfiy son bo'ladi, masalan -1001234567890).
+# Bir nechta guruh bo'lsa, VERGUL bilan ajratib yozing, masalan: "-1001234567890,-1009876543210"
+SUPPORT_GROUP_IDLAR = [
+    int(x.strip()) for x in os.environ.get("SUPPORT_GROUP_ID", "0").split(",") if x.strip()
+]
 
 # Supabase loyihasining URL manzili (Supabase panel -> Settings -> API)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")

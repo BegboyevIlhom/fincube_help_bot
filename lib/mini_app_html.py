@@ -227,13 +227,38 @@ MINI_APP_HTML = """
     }
     .tab-tugma .tab-ikon { display: flex; justify-content: center; margin-bottom: 3px; }
     .tab-tugma.faol { color: #06210f; background: linear-gradient(135deg, #22c55e, #16a34a); }
+
+    /* ===== ANIMATSIYALAR: yuklanish holatini yanada quvnoq/zamonaviy qilish uchun ===== */
+
+    /* Shimmer — kutish paytida "yorug'lik oqib o'tayotgan" ko'rinishdagi skelet-kartalar */
+    @keyframes shimmer { 0% { background-position: -450px 0; } 100% { background-position: 450px 0; } }
+    .skeleton-karta {
+        height: 88px; border-radius: 16px; margin-bottom: 11px;
+        background: linear-gradient(90deg, var(--border) 25%, var(--chip-bg) 37%, var(--border) 63%);
+        background-size: 900px 100%;
+        animation: shimmer 1.5s linear infinite;
+    }
+    .skeleton-matn {
+        display: inline-block; border-radius: 6px;
+        background: linear-gradient(90deg, var(--border) 25%, var(--chip-bg) 37%, var(--border) 63%);
+        background-size: 900px 100%;
+        animation: shimmer 1.5s linear infinite;
+    }
+
+    /* Avatar — ma'lumot hali kelmaguncha, sekin "nafas olib" turadi */
+    @keyframes nafasOlish { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.55; transform: scale(0.92); } }
+    .avatar.yuklanmoqda { animation: nafasOlish 1.3s ease-in-out infinite; }
+
+    /* Har bir karta ekranga chiqqanda, pastdan yumshoq suzib, xiralikdan aniqlikka o'tadi */
+    @keyframes paydoBolish { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .karta { animation: paydoBolish 0.32s ease-out both; }
 </style>
 </head>
 <body>
     <div class="profil-satr" id="profil-satr">
-        <div class="avatar" id="avatar">?</div>
+        <div class="avatar yuklanmoqda" id="avatar">?</div>
         <div>
-            <h2><span id="xodim-ismi">Yuklanmoqda...</span></h2>
+            <h2><span id="xodim-ismi" class="skeleton-matn" style="width:130px;height:16px"></span></h2>
             <span class="rol-belgi" id="rol-belgi"></span>
         </div>
     </div>
@@ -259,16 +284,16 @@ MINI_APP_HTML = """
         </div>
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span> Navbatda kutayotganlar</div>
-        <div id="navbat-royxati">Yuklanmoqda...</div>
+        <div id="navbat-royxati"><div class="skeleton-karta"></div><div class="skeleton-karta" style="animation-delay:.12s"></div></div>
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span> Consultatsiya jarayonda</div>
-        <div id="jarayon-royxati"></div>
+        <div id="jarayon-royxati"><div class="skeleton-karta" style="animation-delay:.06s"></div></div>
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span> Qayta aloqaga chiqish</div>
-        <div id="qayta-aloqa-royxati"></div>
+        <div id="qayta-aloqa-royxati"><div class="skeleton-karta" style="animation-delay:.18s"></div></div>
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> 20 daqiqada o'tib ketgan mijozlar (bugun)</div>
-        <div id="otib-ketgan-royxati"></div>
+        <div id="otib-ketgan-royxati"><div class="skeleton-karta" style="animation-delay:.24s"></div></div>
     </div>
 
     <div id="sahifa-boshqaruv" style="display:none">
@@ -329,8 +354,27 @@ const IKON = {
 async function so_rov(manzil, usul, gavda) {
     const sozlamalar = { method: usul, headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg.initData } };
     if (gavda) sozlamalar.body = JSON.stringify(gavda);
-    const javob = await fetch(manzil, sozlamalar);
-    return await javob.json();
+
+    // MUHIM: agar so'rov hech qachon javob bermay "osilib" qolsa (masalan ba'zi Telegram Desktop
+    // versiyalarida uchraydigan muammo), 12 soniyadan keyin majburan to'xtatamiz — aks holda sahifa
+    // abadiy "Yuklanmoqda..." holatida qolib ketardi, hech qanday xabar ko'rsatmasdan
+    const boshqaruvchi = new AbortController();
+    const vaqtchi = setTimeout(() => boshqaruvchi.abort(), 12000);
+    sozlamalar.signal = boshqaruvchi.signal;
+
+    try {
+        const javob = await fetch(manzil, sozlamalar);
+        return await javob.json();
+    } catch (xato) {
+        // agar server umuman javob bermasa, JSON o'rniga boshqa narsa qaytarsa, yoki vaqt tugasa —
+        // bu yerda "ushlab qolamiz" va aniq xabar bilan qaytaramiz
+        const matn = (xato.name === 'AbortError')
+            ? 'Server javob bermadi (vaqt tugadi). Telegram\\'ni yangilab, qayta urinib ko\\'ring.'
+            : 'Server bilan bog\\'lanib bo\\'lmadi: ' + xato.message;
+        return { ok: false, xato: matn };
+    } finally {
+        clearTimeout(vaqtchi);
+    }
 }
 
 // "Ish" va "Boshqaruv" sahifalari orasida almashtiradi
@@ -347,9 +391,10 @@ function kompaniyaHtml(z) {
     return z.kompaniya_nomi ? `<div class="kompaniya-belgisi">🏢 ${z.kompaniya_nomi}</div>` : '';
 }
 
-function kartaChiz(z, ichkiQator, oddiymi) {
+function kartaChiz(z, ichkiQator, oddiymi, tartib) {
+    const kechikish = (tartib || 0) * 45;  // har bir keyingi karta bir oz kech chiqadi — "kaskad" effekti
     return `
-        <div class="karta ${oddiymi ? 'oddiy' : ''}" data-yaratilgan="${z.yaratilgan_vaqt || ''}">
+        <div class="karta ${oddiymi ? 'oddiy' : ''}" data-yaratilgan="${z.yaratilgan_vaqt || ''}" style="animation-delay:${kechikish}ms">
             <div class="sarlavha">
                 <span>Mijoz #${z.id}</span>
                 ${oddiymi ? '' : '<span class="taymer yashil">20:00</span>'}
@@ -363,9 +408,19 @@ function kartaChiz(z, ichkiQator, oddiymi) {
 async function yukla() {
     const m = await so_rov('/api/app/royxat', 'GET');
 
+    const ismJoyi = document.getElementById('xodim-ismi');
+    ismJoyi.className = '';  // skelet-shimmer ko'rinishini har doim tozalab qo'yamiz (xato bo'lsa ham, ok bo'lsa ham)
+    ismJoyi.style.cssText = '';
+
     if (!m.ok) {
-        document.getElementById('xodim-ismi').textContent = 'Xatolik';
+        ismJoyi.textContent = 'Xatolik';
         document.getElementById('xodim-holati').textContent = m.xato || 'Noma\\'lum xatolik';
+        // MUHIM: ro'yxat bo'limlari ham "shimmer" holatida abadiy qolib ketmasin — ularga ham aniq xabar chiqaramiz
+        const xabar_html = `<div class="bosh-holat">⚠️ ${m.xato || 'Yuklab bo\\'lmadi'}</div>`;
+        ['navbat-royxati', 'jarayon-royxati', 'qayta-aloqa-royxati', 'otib-ketgan-royxati'].forEach(id => {
+            const joy = document.getElementById(id);
+            if (joy) joy.innerHTML = xabar_html;
+        });
         return;
     }
     oxirgiMalumot = m;  // "Kompaniyalar" oynasi shu yerdan ma'lumot oladi
@@ -379,7 +434,7 @@ async function yukla() {
     const boshqaruvTabi = document.getElementById('tab-boshqaruv');
     boshqaruvTabi.style.display = ownerKurishHuquqiBormi ? 'block' : 'none';
 
-    document.getElementById('xodim-ismi').textContent = xodim.ism_familiya;
+    ismJoyi.textContent = xodim.ism_familiya;
     const rolBelgi = document.getElementById('rol-belgi');
     const avatar = document.getElementById('avatar');
     avatar.textContent = (xodim.ism_familiya || '?').trim().charAt(0).toUpperCase();
@@ -405,9 +460,9 @@ async function yukla() {
         navbatRoyxat.innerHTML = '<div class="bosh-holat">Hozircha navbatda hech kim yo\\'q 🎉</div>';
     } else {
         const bandmi = xodim.holat !== 'bosh';
-        navbatRoyxat.innerHTML = m.navbatdagilar.map(z => {
+        navbatRoyxat.innerHTML = m.navbatdagilar.map((z, idx) => {
             const tugma = kuzatuvchimi ? '' : `<button class="btn-qabul" ${bandmi ? 'disabled' : ''} onclick="qabul(${z.id})">✅ Qabul qildim</button>`;
-            return kartaChiz(z, tugma, false);
+            return kartaChiz(z, tugma, false, idx);
         }).join('');
     }
 
@@ -724,10 +779,9 @@ function mijozKartasiChiz(mij, izohliMi) {
             else if (mij.yulduz <= 2) { holatMatni = '👎 Salbiy'; holatRang = '#ef4444'; }
             bahoHtml = `${'⭐'.repeat(mij.yulduz)} <span style="color:${holatRang};font-weight:700">${holatMatni}</span>`;
         }
-        const izohHtml = mij.izoh
-            ? `<div class="matn" style="margin-top:6px;border-top:1px solid var(--border-soft);padding-top:6px">💬 «${mij.izoh}»</div>`
-            : '';
-        qoshimcha_html = `<div style="margin-top:8px;font-size:13px">${bahoHtml}</div>${izohHtml}`;
+        // DIQQAT: mijozning yozgan IZOHI (komentariyasi) atayin ko'rsatilmaydi — faqat baho
+        // (yulduz/ijobiy-salbiy) ko'rinadi, matnli izoh xodimlarga ko'rinmasligi kerak
+        qoshimcha_html = `<div style="margin-top:8px;font-size:13px">${bahoHtml}</div>`;
     } else if (mij.qongiroq_soni) {
         qoshimcha_html = `<div class="urinish-belgisi">📵 ${mij.qongiroq_soni}/${QONGIROQ_MAKS} marta urinilgan</div>`;
     }
@@ -778,12 +832,19 @@ function tafsilotTabiniChiz(tanlangan_kalit) {
             ${t.nom} (${(m[t.kalit] || []).length})
         </span>`).join('');
 
+    // MUHIM: mijozning bahosi/izohi (ayniqsa salbiy bo'lsa) — bu FAQAT rahbarlarga (owner/super_user)
+    // ko'rinadi. Oddiy xodim (masalan o'zining "Bugungi ko'rsatkichlarim" havolasidan kirganda)
+    // buni ko'rmasligi kerak — aks holda salbiy fikr uni tushkunlikka solib, kayfiyatiga va
+    // ishtiyoqiga salbiy ta'sir qilishi mumkin
+    const joriyRol = (oxirgiMalumot && oxirgiMalumot.xodim && oxirgiMalumot.xodim.rol) || 'xodim';
+    const bahoKorinsinmi = joriyRol !== 'xodim';
+
     const joriy_tab = TAFSILOT_TABLARI.find(t => t.kalit === tanlangan_kalit);
     const royxat = m[tanlangan_kalit] || [];
     const royxatJoy = document.getElementById('tafsilot-royxat');
     royxatJoy.innerHTML = royxat.length === 0
         ? `<div class="bosh-holat">${joriy_tab.bosh}</div>`
-        : royxat.map(mij => mijozKartasiChiz(mij, joriy_tab.izohliMi)).join('');
+        : royxat.map(mij => mijozKartasiChiz(mij, joriy_tab.izohliMi && bahoKorinsinmi)).join('');
 }
 
 // Analitika (bugungi) bo'limida xodim ustiga bosilganda

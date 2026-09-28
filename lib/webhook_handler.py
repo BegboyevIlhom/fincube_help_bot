@@ -7,7 +7,7 @@ from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
 from lib import sheets  # Google Sheets'dagi mijozlar bazasini tekshirish funksiyasi
 from lib.logic import malumot_toliqmi, shubhali_raqamlarni_top  # INN/telefon tekshiruvchi funksiyalar
 from lib.config import (
-    SUPPORT_GROUP_ID, SHARTNOMA_XODIM_NICK, SHARTNOMA_XODIM_TEL, APP_URL,
+    SUPPORT_GROUP_IDLAR, SHARTNOMA_XODIM_NICK, SHARTNOMA_XODIM_TEL, APP_URL,
     MUMKIN_YONALISHLAR, QONGIROQ_URINISH_MAKS, BOT_USERNAME
 )
 
@@ -29,14 +29,14 @@ async def xabarni_qayta_ishla(xabar):
         shaxsiy_chatni_boshqar(xabar)  # alohida funksiyaga uzatamiz (mijoz/xodimni farqlash uchun)
         return  # guruh mantig'iga o'tmaymiz
 
-    # TASHXIS UCHUN: har bir (guruhdagi) xabarni albatta logga yozamiz — shunda "bu bizning
-    # guruhimiz emas" deb sukut saqlab tashlab yuborilayotgan holatlar ham ko'rinadi
-    print(f"Guruh xabari: chat_id={chat_id} (kutilgan SUPPORT_GROUP_ID={SUPPORT_GROUP_ID}), "
+    # TASHXIS UCHUN: har bir (guruhdagi) xabarni albatta logga yozamiz — shunda "bizning
+    # guruhlarimiz emas" deb sukut saqlab tashlab yuborilayotgan holatlar ham ko'rinadi
+    print(f"Guruh xabari: chat_id={chat_id} (kutilgan SUPPORT_GROUP_IDLAR={SUPPORT_GROUP_IDLAR}), "
           f"matn={xabar.get('text', '')!r}")
 
-    # faqat bizning support guruhimizdagi xabarlarni ko'rib chiqamiz
-    if chat_id != SUPPORT_GROUP_ID:  # agar bu bizning guruhimiz bo'lmasa
-        print(f"E'TIBORSIZ QOLDIRILDI: chat_id mos kelmadi ({chat_id} != {SUPPORT_GROUP_ID})")
+    # faqat bizning support guruh(lar)imizdagi xabarlarni ko'rib chiqamiz (bir nechta guruh bo'lishi mumkin)
+    if chat_id not in SUPPORT_GROUP_IDLAR:  # agar bu bizning guruhlarimizdan biri bo'lmasa
+        print(f"E'TIBORSIZ QOLDIRILDI: chat_id mos kelmadi ({chat_id} ro'yxatda yo'q: {SUPPORT_GROUP_IDLAR})")
         return  # e'tiborsiz qoldiramiz
 
     yuboruvchi = xabar.get("from", {})  # xabarni kim yuborgani haqida ma'lumot
@@ -456,15 +456,8 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
         db.zayavkani_yangila(zayavka_id, holat="qayta_aloqa")
         db.xodim_holatini_yangila(xodim["id"], "bosh", None)
 
-        # guruhdagi eng oxirgi xabarni yangilaymiz — ENDI TUGMASIZ (xodim Mini App'dagi
-        # "Qayta aloqaga chiqish" bo'limidan qayta qabul qiladi)
-        if zayavka.get("oxirgi_tag_xabar_id"):
-            tg.xabar_tahrirla(
-                zayavka["guruh_chat_id"],
-                zayavka["oxirgi_tag_xabar_id"],
-                f"📵 Mijoz javob bermadi ({yangi_son}/{QONGIROQ_URINISH_MAKS}). "
-                f"<b>{xodim['ism_familiya']}</b> Mini App'dan qayta bog'lanishi mumkin."
-            )
+        # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz — bu holat allaqachon
+        # Mini App'dagi "Qayta aloqaga chiqish" bo'limida to'liq ko'rinib turibdi
 
         keyingi = db.keyingi_navbatdagi_zayavka()  # xodim bo'shagani uchun navbatdagi mijozga o'tishi mumkin
         if keyingi:
@@ -490,13 +483,8 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
     db.zayavkani_yangila(zayavka_id, holat="javob_bermadi", tugallangan_vaqt=db.hozir().isoformat())
     db.xodim_holatini_yangila(xodim["id"], "bosh", None)  # xodim endi bo'sh
 
-    # guruhdagi eng oxirgi xabarni yangilaymiz
-    if zayavka.get("oxirgi_tag_xabar_id"):
-        tg.xabar_tahrirla(
-            zayavka["guruh_chat_id"],
-            zayavka["oxirgi_tag_xabar_id"],
-            f"📵 Mijoz {QONGIROQ_URINISH_MAKS} marta javob bermadi — zayavka yopildi ({xodim['ism_familiya']})."
-        )
+    # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz — bu holat Mini App'dagi
+    # "Javob bermadi" bo'limida to'liq ko'rinib turibdi
 
     # navbatda kutayotgan boshqa mijoz bormi tekshiramiz (xuddi oddiy yakunlashdagidek)
     keyingi = db.keyingi_navbatdagi_zayavka()
@@ -525,13 +513,7 @@ def zayavkani_qayta_qabul_qil(xodim, zayavka_id):
     db.zayavkani_yangila(zayavka_id, holat="jarayonda", jarayon_boshlangan_vaqt=db.hozir().isoformat())
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
 
-    # guruhdagi eng oxirgi xabarni yangilaymiz — ENDI TUGMASIZ
-    if zayavka.get("oxirgi_tag_xabar_id"):
-        tg.xabar_tahrirla(
-            zayavka["guruh_chat_id"],
-            zayavka["oxirgi_tag_xabar_id"],
-            f"✅ Ushbu mijozni <b>{xodim['ism_familiya']}</b> qayta qabul qildi."
-        )
+    # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz
 
     return {"ok": True, "xabar": "Qabul qilindi, omad!"}
 
