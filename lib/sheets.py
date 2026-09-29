@@ -51,8 +51,11 @@ def _sarlavha_qatorini_top(qatorlar):
 
 
 def _varaqdan_qidir(varaq_nomi, inn):
-    # bitta varaq ichidan berilgan INN'ga mos qatorni qidiradi
-    # topsa {"sana": ..., "kompaniya": ...} qaytaradi, topmasa None
+    # bitta varaq ichidan berilgan INN'ga mos BARCHA qatorlarni qidiradi, va ular orasidan
+    # ENG YAXSHI (eng uzoq muddatli) sanaga ega bo'lganini tanlab qaytaradi.
+    # MUHIM: bitta mijoz shartnomasi tugagach, YANGI qator ochib qayta shartnoma tuzishlari mumkin —
+    # bu holda eski (muddati o'tgan) qator yuqorida, yangi (faol) qator pastda turishi mumkin.
+    # Shuning uchun BIRINCHI mos qatorda to'xtamasdan, OXIRIGACHA qidirib, eng yaxshisini tanlaymiz
     qatorlar = _varaqni_oqi(varaq_nomi)
     if not qatorlar:  # agar varaq bo'sh bo'lsa
         return None
@@ -73,6 +76,8 @@ def _varaqdan_qidir(varaq_nomi, inn):
     except ValueError:
         kompaniya_ustun = None
 
+    topilgan_qatorlar = []  # shu INN'ga mos BARCHA qatorlarni shu yerga yig'amiz (faqat birinchisini emas)
+
     # ma'lumotlar sarlavha qatoridan KEYINGI qatorlardan boshlanadi (1-qator emas, sarlavha qayerda bo'lsa o'shandan keyin)
     for qator in qatorlar[sarlavha_indeksi + 1:]:
         if len(qator) <= max(inn_ustun, sana_ustun):  # agar qator yetarlicha uzun bo'lmasa
@@ -81,9 +86,14 @@ def _varaqdan_qidir(varaq_nomi, inn):
             kompaniya = None
             if kompaniya_ustun is not None and len(qator) > kompaniya_ustun:
                 kompaniya = qator[kompaniya_ustun].strip() or None
-            return {"sana": _sanani_ayir(qator[sana_ustun]), "kompaniya": kompaniya}
+            topilgan_qatorlar.append({"sana": _sanani_ayir(qator[sana_ustun]), "kompaniya": kompaniya})
+            # DIQQAT: bu yerda "return" YO'Q — davom etib, qolgan qatorlarni ham qidiramiz
 
-    return None  # bu varaqda topilmadi
+    if not topilgan_qatorlar:  # bu varaqda umuman topilmadi
+        return None
+
+    # bir nechta qator topilgan bo'lsa (masalan eski + yangilangan shartnoma), ENG UZOQ sanalisini tanlaymiz
+    return max(topilgan_qatorlar, key=lambda x: x["sana"] or date.min)
 
 
 def mijoz_holati(inn):

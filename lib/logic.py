@@ -4,8 +4,17 @@
 import re  # matn ichidan raqamlarni qidirish uchun "regular expression" kutubxonasi
 
 # "INN", "telefon" kabi so'zlar — bular ko'pincha ikkita raqamning orasida kelib,
-# "bu yerda yangi raqam boshlanadi" degan tabiiy belgi vazifasini bajaradi (vergul bo'lmasa ham)
-_KALIT_SOZLAR = re.compile(r"(?i)\b(?:inn|stir|telefon|tel|raqami|raqam|nomeri|nomer|phone)\b")
+# "bu yerda yangi raqam boshlanadi" degan tabiiy belgi vazifasini bajaradi (vergul bo'lmasa ham).
+# DIQQAT: kirill yozuvidagi so'zlar ("инн", "стир", "тел", "телефон", "рақами") ham qo'shilgan —
+# chunki ba'zi mijozlar kirill alifbosida yozadi
+_KALIT_SOZLAR = re.compile(
+    r"(?i)\b(?:inn|stir|telefon|tel|raqami|raqam|nomeri|nomer|phone|"
+    r"инн|стир|телефон|тел|рақами|рақам|номери|номер)\b"
+)
+
+# Faqat "bu — aniq INN" deb ANIQ belgilaydigan so'zlar (telefon so'zlari bu yerga kirmaydi) —
+# lotin va kirill ikkalasida ham
+_INN_YORLIQ_SOZI = re.compile(r"(?i)\b(?:inn|stir|tin|инн|стир)\b")
 
 
 def toqqiz_xonali_raqamlarni_top(matn):
@@ -58,9 +67,34 @@ def toqqiz_xonali_raqamlarni_top(matn):
     return list(dict.fromkeys(natija))  # dict.fromkeys tartibni saqlab, takrorlarni olib tashlaydi
 
 
+def yorliqlangan_inn_ni_top(matn):
+    # matn ichida "INN"/"ИНН"/"STIR" kabi so'zdan DARHOL keyin keladigan 9 xonali raqamni qidiradi.
+    # Agar topilsa — bu mijoz xabarida QAYSI TARTIBDA yozilishidan qat'iy nazar (masalan telefon
+    # birinchi, INN ikkinchi kelsa ham), ANIQ INN ekanini bildiradi
+    if not matn:
+        return None
+    moslik = _INN_YORLIQ_SOZI.search(matn)
+    if not moslik:  # agar matnda "INN" so'zi umuman bo'lmasa
+        return None
+    # so'zdan keyingi qismni olib (30 ta belgigacha), undan birinchi 9(+) xonali raqam guruhini izlaymiz
+    keyingi_qism = matn[moslik.end():moslik.end() + 30]
+    raqam_moslik = re.search(r"\d[\d\s\-()]{6,}\d|\d{9,}", keyingi_qism)
+    if not raqam_moslik:
+        return None
+    faqat_raqam = re.sub(r"\D", "", raqam_moslik.group())
+    return faqat_raqam if len(faqat_raqam) == 9 else None
+
+
 def malumot_toliqmi(matn):
     # zayavka uchun kamida 2 ta har xil 9 xonali raqam (INN va telefon) topilgan-topilmaganini tekshiradi
     raqamlar = toqqiz_xonali_raqamlarni_top(matn)  # matn ichidan barcha 9 xonali raqamlarni topamiz
+
+    # agar matnda "INN" so'zi bilan ANIQ belgilangan raqam bo'lsa — uni ro'yxatning BOSHIGA o'tkazamiz
+    # (chunki qolgan kod har doim raqamlar[0]ni INN deb qabul qiladi — tartib emas, yorliq hal qiladi)
+    yorliqli_inn = yorliqlangan_inn_ni_top(matn)
+    if yorliqli_inn and yorliqli_inn in raqamlar and raqamlar[0] != yorliqli_inn:
+        raqamlar = [yorliqli_inn] + [r for r in raqamlar if r != yorliqli_inn]
+
     return len(raqamlar) >= 2, raqamlar  # ikkitadan kam bo'lmasa "to'liq" deymiz, raqamlarni ham qaytaramiz
 
 
