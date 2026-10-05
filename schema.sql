@@ -125,3 +125,10 @@ alter table zayavkalar add column if not exists qongiroq_soni integer not null d
 -- vaqtincha saqlab turish uchun — start bosgan zahoti avtomatik yetkaziladi
 -- ============================================================
 alter table mijozlar add column if not exists kutayotgan_xabar text;
+
+-- ============================================================
+-- QO'SHIMCHA: mijoz xabarini TAHRIRLAGANDA to'g'ri almashtirish uchun
+-- zayavkadagi har bir xabarning (ID, matn) ro'yxati saqlanadi
+-- ============================================================
+alter table zayavkalar add column if not exists xabarlar jsonb not null default '[]'::jsonb;
+NOTIFY pgrst, 'reload schema';

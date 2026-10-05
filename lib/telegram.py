@@ -2,7 +2,8 @@
 # (xabar yuborish, xabarni tahrirlash, tugma bosilganiga javob berish)
 
 import requests  # HTTP so'rov yuborish uchun kutubxona
-from lib.config import TELEGRAM_API  # tayyorlab qo'yilgan Telegram API manzili
+from concurrent.futures import ThreadPoolExecutor  # bir nechta xodimga BIR VAQTDA xabar yuborish uchun
+from lib.config import TELEGRAM_API, APP_URL  # tayyorlab qo'yilgan Telegram API manzili va Mini App manzili
 
 
 def xabar_yubor(chat_id, matn, reply_to=None, tugmalar=None):
@@ -72,3 +73,37 @@ def xodim_belgisi(xodim):
 def xodimlarni_belgila(xodimlar):
     # bir nechta xodimni vergul bilan ajratib, bitta qatorda belgilab beradi
     return ", ".join(xodim_belgisi(x) for x in xodimlar)
+
+
+def ish_paneli_tugmasi():
+    # xabar tagida "Ish panelini ochish" tugmasini (bosilsa Mini App ochiladi) tayyorlaydi.
+    # Bunday tugma faqat shaxsiy chatda ishlaydi. APP_URL sozlanmagan bo'lsa — tugma bo'lmaydi
+    if not APP_URL:
+        return None
+    return [[{"text": "📋 Ish panelini ochish", "web_app": {"url": f"{APP_URL}/app"}}]]
+
+
+def xodimlarga_shaxsiy_xabar(xodimlar, matn, tugma_bilan=True):
+    # xodimlarning har biriga SHAXSIY chatda xabar yuboradi (guruhda hech narsa ko'rinmaydi).
+    # Hamma xodimga bir vaqtda (parallel) yuboriladi — shunda 5 ta xodim uchun 5 barobar sekin bo'lmaydi.
+    # Biror xodimga yetmasa (masalan u botni hali "start" qilmagan bo'lsa) — boshqalarga halaqit bermaydi,
+    # faqat logga yoziladi
+    # manfiy telegram_id — ishdan bo'shatilgan (SQL bilan belgilangan) xodim, unga yubormaymiz
+    qabul_qiluvchilar = [x for x in (xodimlar or []) if (x.get("telegram_id") or 0) > 0]
+    if not qabul_qiluvchilar:
+        return
+
+    tugmalar = ish_paneli_tugmasi() if tugma_bilan else None
+
+    def yubor(xodim):
+        try:
+            return xabar_yubor(xodim["telegram_id"], matn, tugmalar=tugmalar)
+        except Exception as xato:  # tarmoq xatosi bo'lsa ham asosiy jarayonni to'xtatmaymiz
+            return {"ok": False, "description": str(xato)}
+
+    with ThreadPoolExecutor(max_workers=min(len(qabul_qiluvchilar), 8)) as havuz:
+        natijalar = list(havuz.map(yubor, qabul_qiluvchilar))
+
+    for xodim, natija in zip(qabul_qiluvchilar, natijalar):
+        if not natija.get("ok"):
+            print(f"Xodimga ({xodim.get('ism_familiya')}) shaxsiy xabar yetmadi: {natija.get('description')}")

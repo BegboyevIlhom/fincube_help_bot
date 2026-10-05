@@ -2,6 +2,7 @@
 # Bu oddiy Python funksiyalari to'plami — FastAPI'ning o'zi bu yerda yo'q,
 # uni faqat api/index.py chaqiradi (shu tarzda Vercel'ning yangi talabiga moslashadi)
 
+import html  # kompaniya nomi kabi matnlarni Telegram HTML xabariga xavfsiz qo'yish uchun
 from lib import db  # ma'lumotlar bazasi funksiyalari
 from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
 from lib import sheets  # Google Sheets'dagi mijozlar bazasini tekshirish funksiyasi
@@ -16,6 +17,8 @@ async def yangilanishni_qayta_ishla(malumot):
     # Telegramdan kelgan bitta "update" obyektini turiga qarab tegishli funksiyaga yo'naltiradi
     if "message" in malumot:  # agar bu oddiy xabar bo'lsa (mijoz yoki xodim yozgan)
         await xabarni_qayta_ishla(malumot["message"])
+    elif "edited_message" in malumot:  # agar mijoz o'zining OLDINGI xabarini TAHRIRLAGAN bo'lsa
+        await tahrirlangan_xabarni_qayta_ishla(malumot["edited_message"])
     elif "callback_query" in malumot:  # agar bu tugma bosilishi bo'lsa (xodim tugma bosdi)
         await tugmani_qayta_ishla(malumot["callback_query"])
 
@@ -77,43 +80,109 @@ async def xabarni_qayta_ishla(xabar):
     zayavka = db.ochiq_zayavka_top(mijoz["id"])
 
     if zayavka:  # agar ochiq zayavka mavjud bo'lsa — yangi xabarni eskisiga qo'shib qo'yamiz
-        yangi_matn = (zayavka.get("matn") or "") + "\n" + matn
-        db.zayavka_matnini_yangila(zayavka["id"], yangi_matn)
+        xabarlar = zayavkaning_xabarlari(zayavka)  # shu zayavkadagi barcha xabarlar (ID va matn bilan)
+        xabarlar.append({"id": xabar.get("message_id"), "t": matn})
+        yangi_matn = "\n".join(x["t"] for x in xabarlar)
+        db.zayavka_matnini_yangila(zayavka["id"], yangi_matn, xabarlar)
         zayavka["matn"] = yangi_matn  # keyingi tekshiruv uchun mahalliy nusxasini ham yangilaymiz
+        zayavka["xabarlar"] = xabarlar
     else:  # aks holda yangi zayavka ochamiz
         zayavka = db.zayavka_yarat(mijoz["id"], chat_id, xabar.get("message_id"), matn)
+
+    # endi INN/telefonni va shartnomani tekshirib, zayavkani kerakli holatga o'tkazamiz
+    zayavkani_tekshir(zayavka, mijoz, xabar, chat_id)
+
+
+def zayavkaning_xabarlari(zayavka):
+    # zayavkadagi xabarlar ro'yxatini [{"id": xabar_id, "t": matn}, ...] ko'rinishida qaytaradi.
+    # Eski zayavkalarda (ro'yxat saqlanmagan bo'lsa) butun matnni bitta xabar deb olamiz
+    xabarlar = [dict(x) for x in (zayavka.get("xabarlar") or [])]
+    if not xabarlar and zayavka.get("matn"):
+        xabarlar = [{"id": zayavka.get("mijoz_xabar_id"), "t": zayavka["matn"]}]
+    return xabarlar
+
+
+# mijoz zayavkasi to'liq (INN + telefon) va shartnomasi faol bo'lganda guruhda shu xabar yuboriladi
+RASMIY_QABUL_XABARI = (
+    "🇺🇿 Assalomu alaykum, hurmatli mijoz! Murojaatingiz qabul qilindi.\n"
+    "Yaqin 15-20 daqiqa ichida xodimlarimiz siz bilan bog'lanadi.\n\n"
+    "🇷🇺 Здравствуйте, уважаемый клиент! Ваше обращение принято.\n"
+    "В течение 15–20 минут наши сотрудники свяжутся с вами."
+)
+
+
+def guruh_statusini_yangila(zayavka, status_matni):
+    # guruhdagi rasmiy xabarni (mijozga yuborilgan) yangi status bilan TAHRIRLAYDI — yangi xabar yozmaydi.
+    # Xabar topilmasa yoki Telegram tahrirga ruxsat bermasa, asosiy jarayon (qabul/yakunlash) to'xtamaydi
+    xabar_id = zayavka.get("oxirgi_tag_xabar_id")
+    if not xabar_id:  # eski zayavka — rasmiy xabar ID'si saqlanmagan
+        return
+    try:
+        natija = tg.xabar_tahrirla(zayavka["guruh_chat_id"], xabar_id, status_matni)
+        if not natija.get("ok"):
+            print(f"Guruh statusini yangilab bo'lmadi: {natija.get('description')}")
+    except Exception as xato:
+        print(f"Guruh statusini yangilashda xatolik: {xato}")
+
+
+def qabul_status_matni(xodim_ismi):
+    ism = html.escape(xodim_ismi)
+    return (
+        f"✅ Murojaatingizni <b>{ism}</b> qabul qildi. Tez orada siz bilan bog'lanadi.\n\n"
+        f"✅ Ваше обращение принял(а) <b>{ism}</b>. Скоро с вами свяжутся."
+    )
+
+
+def yakun_status_matni(xodim_ismi):
+    ism = html.escape(xodim_ismi)
+    return (
+        f"☑️ Consultatsiya yakunlandi ({ism}). Rahmat!\n\n"
+        f"☑️ Консультация завершена ({ism}). Спасибо!"
+    )
+
+
+def malumot_yetarli_emas_xabari(matn, chat_id, javob_xabar_id):
+    # INN/telefon to'liq bo'lmaganda mijozga nima qilish kerakligini aniq yozib yuboradi
+    shubhali = shubhali_raqamlarni_top(matn)  # "deyarli to'g'ri" raqamlar bormi tekshiramiz
+
+    if shubhali:  # agar mijoz yozgan raqamlardan biri 9 xonaga yaqin, lekin noto'g'ri bo'lsa
+        # bu holatda aniq QAYSI raqamda xato borligini ko'rsatib, umumiy xabarni takrorlamaymiz
+        royxat = ", ".join(f"«{r}» ({len(r)} xonali)" for r in shubhali)  # masalan: «87687876» (8 xonali)
+        tg.xabar_yubor(
+            chat_id,
+            f"🇺🇿 Diqqat: {royxat} raqamingizda xatolik bo'lishi mumkin — "
+            f"INN va telefon raqami <b>aynan 9 xonali</b> bo'lishi kerak.\n"
+            f"Iltimos, tekshirib, xabaringizni <b>tahrirlang</b> yoki <b>yangi xabar</b> yozing.\n\n"
+            f"🇷🇺 Внимание: возможно, в номере {royxat} есть ошибка — "
+            f"ИНН и номер телефона должны состоять <b>ровно из 9 цифр</b>.\n"
+            f"Пожалуйста, проверьте и <b>отредактируйте</b> сообщение или отправьте <b>новое</b>.",
+            reply_to=javob_xabar_id
+        )
+    else:  # hech qanday shubhali raqam yo'q — demak mijoz hali umuman ma'lumot bermagan, namuna ko'rsatamiz
+        tg.xabar_yubor(
+            chat_id,
+            "🇺🇿 Hurmatli mijoz! Murojaatingiz uchun rahmat.\n"
+            "Sizga tezroq yordam berishimiz uchun iltimos <b>INN</b> va <b>telefon raqamingizni</b> yuboring.\n"
+            "Masalan: <code>INN: 123456789, tel: 901234567</code>\n\n"
+            "🇷🇺 Уважаемый клиент! Спасибо за обращение.\n"
+            "Чтобы мы могли быстрее вам помочь, пожалуйста, отправьте ваш <b>ИНН</b> и <b>номер телефона</b>.\n"
+            "Например: <code>ИНН: 123456789, тел: 901234567</code>",
+            reply_to=javob_xabar_id
+        )
+
+
+def zayavkani_tekshir(zayavka, mijoz, xabar, chat_id):
+    # zayavka matni bo'yicha INN/telefonni, so'ng shartnomani tekshiradi va zayavkani kerakli holatga
+    # o'tkazadi. Mijozning YANGI xabari ham, TAHRIRLANGAN xabari ham aynan shu yerdan o'tadi.
+    # xabar — mijozning (yangi yoki tahrirlangan) xabari: bot javobini shu xabarga reply qilib yuboradi
+    javob_xabar_id = xabar.get("message_id")
 
     # endi INN va telefon (ikkalasi ham 9 xonali raqam) berilgan-berilmaganini tekshiramiz
     toliqmi, raqamlar = malumot_toliqmi(zayavka["matn"])
 
     if not toliqmi:  # agar hali ma'lumot yetarli bo'lmasa
-        shubhali = shubhali_raqamlarni_top(zayavka["matn"])  # "deyarli to'g'ri" raqamlar bormi tekshiramiz
-
-        if shubhali:  # agar mijoz yozgan raqamlardan biri 9 xonaga yaqin, lekin noto'g'ri bo'lsa
-            # bu holatda aniq QAYSI raqamda xato borligini ko'rsatib, umumiy xabarni takrorlamaymiz
-            royxat = ", ".join(f"«{r}» ({len(r)} xonali)" for r in shubhali)  # masalan: «87687876» (8 xonali)
-            tg.xabar_yubor(
-                chat_id,
-                f"🇺🇿 Diqqat: {royxat} raqamingizda xatolik bo'lishi mumkin — "
-                f"INN va telefon raqami <b>aynan 9 xonali</b> bo'lishi kerak.\n"
-                f"Iltimos tekshirib, qaytadan to'liq yuboring.\n\n"
-                f"🇷🇺 Внимание: возможно, в номере {royxat} есть ошибка — "
-                f"ИНН и номер телефона должны состоять <b>ровно из 9 цифр</b>.\n"
-                f"Пожалуйста, проверьте и отправьте заново.",
-                reply_to=xabar.get("message_id")
-            )
-        else:  # hech qanday shubhali raqam yo'q — demak mijoz hali umuman ma'lumot bermagan, namuna ko'rsatamiz
-            tg.xabar_yubor(
-                chat_id,
-                "🇺🇿 Hurmatli mijoz! Murojaatingiz uchun rahmat.\n"
-                "Sizga tezroq yordam berishimiz uchun iltimos <b>INN</b> va <b>telefon raqamingizni</b> yuboring.\n"
-                "Masalan: <code>INN: 123456789, tel: 901234567</code>\n\n"
-                "🇷🇺 Уважаемый клиент! Спасибо за обращение.\n"
-                "Чтобы мы могли быстрее вам помочь, пожалуйста, отправьте ваш <b>ИНН</b> и <b>номер телефона</b>.\n"
-                "Например: <code>ИНН: 123456789, тел: 901234567</code>",
-                reply_to=xabar.get("message_id")
-            )
-        return  # xodimlarni chaqirmasdan, mijozdan ma'lumot kutamiz
+        malumot_yetarli_emas_xabari(zayavka["matn"], chat_id, javob_xabar_id)
+        return  # mijozdan ma'lumot kutamiz
 
     # ma'lumot to'liq bo'lsa — mijozning INN/telefonini bazaga yozamiz (birinchi ikkita topilgan raqam sifatida)
     db.mijoz_malumotini_yangila(mijoz["id"], raqamlar[0], raqamlar[1])
@@ -122,29 +191,119 @@ async def xabarni_qayta_ishla(xabar):
     # (Google Sheets'dagi "Ligotniy" va "Platniy" jadvallaridan tekshiramiz)
     shartnoma = sheets.mijoz_holati(raqamlar[0])  # raqamlar[0] — INN sifatida qabul qilingan raqam
 
-    # MUHIM: INN va kompaniya nomini ENDI ZAYAVKANING O'ZIGA yozamiz (mijozning umumiy
-    # yozuviga emas) — shunda agar shu odam keyinroq BOSHQA INN bilan murojaat qilsa,
-    # bu eski zayavka o'zining haqiqiy (o'sha paytdagi) kompaniyasini saqlab qoladi,
-    # keyingi murojaatlar buni "qayta yozib" o'zgartirmaydi
-    db.zayavkani_yangila(zayavka["id"], inn=raqamlar[0], kompaniya_nomi=shartnoma.get("kompaniya_nomi"))
+    # MUHIM: INN va kompaniya nomini ZAYAVKANING O'ZIGA yozamiz (mijozning umumiy yozuviga emas) —
+    # shunda agar shu odam keyinroq BOSHQA INN bilan murojaat qilsa, bu eski zayavka o'zining
+    # haqiqiy (o'sha paytdagi) kompaniyasini saqlab qoladi
+    kompaniya_nomi = shartnoma.get("kompaniya_nomi")
+    db.zayavkani_yangila(zayavka["id"], inn=raqamlar[0], kompaniya_nomi=kompaniya_nomi)
 
-    if shartnoma.get("kompaniya_nomi"):  # agar Google Sheets'da kompaniya nomi topilgan bo'lsa
+    if kompaniya_nomi:  # agar Google Sheets'da kompaniya nomi topilgan bo'lsa
         # mijoz yozuviga ham "oxirgi ma'lum kompaniya" sifatida saqlab qo'yamiz (ixtiyoriy, qulaylik uchun)
-        db.mijoz_kompaniyasini_yangila(mijoz["id"], shartnoma["kompaniya_nomi"])
+        db.mijoz_kompaniyasini_yangila(mijoz["id"], kompaniya_nomi)
 
     if shartnoma["holat"] != "faol":  # agar shartnoma umuman topilmasa yoki muddati o'tgan bo'lsa
+        # zayavka FAQAT hali xodim qo'liga o'tmagan bo'lsa "shartnoma_yoq" bo'ladi (poyga holatidan himoya)
+        db.zayavkani_shartli_yangila(
+            zayavka["id"], ["malumot_kutilmoqda", "navbatda", "shartnoma_yoq"], holat="shartnoma_yoq"
+        )
         shartnoma_yoq_xabar_yubor(mijoz, xabar, chat_id, shartnoma["holat"])
-        db.zayavkani_yangila(zayavka["id"], holat="shartnoma_yoq")  # bu zayavka navbatga qo'yilmaydi
         return  # xodimlarni chaqirmasdan, jarayonni shu yerda to'xtatamiz
 
-    # zayavkani "navbatda" holatiga o'tkazamiz va taymerni shu daqiqadan boshlaymiz
-    db.zayavkani_yangila(
-        zayavka["id"],
-        holat="navbatda",
-        yaratilgan_vaqt=db.hozir().isoformat()
+    zayavkani_navbatga_qoy(zayavka, kompaniya_nomi, chat_id, javob_xabar_id)
+
+
+def zayavkani_navbatga_qoy(zayavka, kompaniya_nomi, chat_id, javob_xabar_id):
+    # zayavkani navbatga qo'yadi, mijozga rasmiy xabar yuboradi va bo'sh xodimlarga SHAXSIY bildirishnoma beradi.
+    # Guruhda xodimlar tag QILINMAYDI — ular zayavkani Mini App'da ko'radi
+    if not db.zayavkani_atomik_navbatga_qoy(zayavka["id"]):
+        return False  # zayavka allaqachon navbatda (yoki xodim qo'lida) — qayta xabar yubormaymiz
+
+    # 1) mijozga guruhda rasmiy xabar (uning xabariga reply qilib). Xabar ID'sini saqlab qo'yamiz —
+    # xodim qabul qilganda/yakunlaganda shu xabarning O'ZI tahrirlanib, status yangilanadi (yangi xabar yozilmaydi)
+    natija = tg.xabar_yubor(chat_id, RASMIY_QABUL_XABARI, reply_to=javob_xabar_id)
+    if natija.get("ok"):
+        db.zayavkani_yangila(zayavka["id"], oxirgi_tag_xabar_id=natija["result"]["message_id"])
+
+    # 2) hozir bo'sh turgan xodimlarga shaxsiy bildirishnoma (band xodimlar o'z ishi tugagach xabar oladi)
+    matn = "🆕 <b>Yangi mijoz murojaati!</b>\n"
+    if kompaniya_nomi:
+        matn += f"🏢 {html.escape(kompaniya_nomi)}\n"
+    matn += "Qabul qilish uchun Ish panelini oching 👇"
+    tg.xodimlarga_shaxsiy_xabar(db.bosh_xodimlar(), matn)
+    return True
+
+
+def navbat_haqida_xodimga_bildir(xodim):
+    # xodim bo'shagach (yakunladi yoki "javob bermadi" bosdi), navbatda mijoz kutayotgan bo'lsa —
+    # shu xodimga shaxsiy eslatma yuboradi (guruhga hech narsa yozilmaydi)
+    tg.xodimlarga_shaxsiy_xabar(
+        [xodim],
+        "🕐 <b>Navbatda mijoz kutyapti.</b>\nQabul qilish uchun Ish panelini oching 👇"
     )
 
-    xodimlarni_taklif_qil(zayavka)
+
+async def tahrirlangan_xabarni_qayta_ishla(xabar):
+    # mijoz guruhdagi o'zining OLDINGI xabarini tahrirlaganda shu yerga tushadi (masalan INN yoki
+    # telefon raqamidagi xatoni to'g'irlagan bo'lsa). Yangi xabar yozmasdan tuzatganini ham qabul qilamiz
+    chat = xabar.get("chat", {})
+    chat_id = chat.get("id")
+    if chat.get("type") == "private" or chat_id not in SUPPORT_GROUP_IDLAR:
+        return  # faqat bizning support guruh(lar)imizdagi tahrirlar ahamiyatli
+
+    yangi_matn_xabari = xabar.get("text", "")
+    if not yangi_matn_xabari:  # matnsiz (masalan rasm izohi) tahrirlarni e'tiborsiz qoldiramiz
+        return
+
+    xabar_id = xabar.get("message_id")
+    mijoz = db.mijoz_topilsin(xabar.get("from", {}).get("id"))  # faqat qidiramiz, yangi mijoz yaratmaymiz
+    if not mijoz:
+        return  # bu odam bizda mijoz sifatida yo'q (masalan xodim yoki begona) — e'tiborsiz
+
+    # tahrirlangan xabar mijozning qaysi zayavkasiga tegishli ekanini topamiz
+    zayavka = None
+    for z in db.mijozning_oxirgi_zayavkalari(mijoz["id"], 5):
+        if z.get("guruh_chat_id") != chat_id:
+            continue
+        if z.get("mijoz_xabar_id") == xabar_id or any(x.get("id") == xabar_id for x in (z.get("xabarlar") or [])):
+            zayavka = z
+            break
+    if not zayavka:
+        print(f"Tahrirlangan xabar ({xabar_id}) hech bir zayavkaga tegishli emas — e'tiborsiz qoldirildi")
+        return
+
+    holat = zayavka.get("holat")
+    if holat not in ("malumot_kutilmoqda", "shartnoma_yoq", "navbatda", "muddati_otdi", "jarayonda", "qayta_aloqa"):
+        return  # tugallangan/yopilgan zayavkaning tarixini o'zgartirmaymiz
+
+    # zayavkadagi shu xabarning matnini yangisiga ALMASHTIRAMIZ (eskisiga qo'shmaymiz)
+    xabarlar = zayavkaning_xabarlari(zayavka)
+    if any(x.get("id") == xabar_id for x in xabarlar):
+        for x in xabarlar:
+            if x.get("id") == xabar_id:
+                x["t"] = yangi_matn_xabari
+    else:  # eski zayavka (xabarlar ro'yxati saqlanmagan) — tahrirlangan xabarni yagona xabar deb olamiz
+        xabarlar = [{"id": xabar_id, "t": yangi_matn_xabari}]
+    yangi_matn = "\n".join(x["t"] for x in xabarlar)
+    if yangi_matn == (zayavka.get("matn") or ""):
+        return  # matn aslida o'zgarmagan (masalan faqat formatlash o'zgargan)
+
+    toliqmi, raqamlar = malumot_toliqmi(yangi_matn)
+
+    if holat == "malumot_kutilmoqda":  # hali ma'lumot yig'ilyapti — yangi xabardagidek to'liq tekshiramiz
+        db.zayavka_matnini_yangila(zayavka["id"], yangi_matn, xabarlar)
+        zayavka["matn"], zayavka["xabarlar"] = yangi_matn, xabarlar
+        zayavkani_tekshir(zayavka, mijoz, xabar, chat_id)
+        return
+
+    # qolgan holatlarda tahrir zayavkani buzmasligi kerak: tahrirdan keyin ma'lumot to'liq bo'lmasa — e'tiborsiz
+    if not toliqmi:
+        return
+    db.zayavka_matnini_yangila(zayavka["id"], yangi_matn, xabarlar)  # xodim kartasida yangi matn ko'rinsin
+    zayavka["matn"], zayavka["xabarlar"] = yangi_matn, xabarlar
+
+    # INN o'zgargan bo'lsa (shartnoma yo'q deb to'xtagan yoki navbatdagi zayavkada) — shartnomani qayta tekshiramiz
+    if holat in ("shartnoma_yoq", "navbatda") and raqamlar[0] != (zayavka.get("inn") or ""):
+        zayavkani_tekshir(zayavka, mijoz, xabar, chat_id)
 
 
 def shaxsiy_chatni_boshqar(xabar):
@@ -269,32 +428,6 @@ def shartnoma_yoq_xabar_yubor(mijoz, xabar, guruh_chat_id, holat):
     shaxsiy_yoki_ogohlantirish_yubor(mijoz, guruh_chat_id, xabar.get("message_id"), matn)
 
 
-def xodimlarni_taklif_qil(zayavka):
-    # navbatdagi zayavka uchun bo'sh turgan barcha xodimlarni tag qilib, "Qabul qildim" tugmasi bilan taklif yuboradi
-    bosh_turganlar = db.bosh_xodimlar()  # bo'sh turgan barcha xodimlarni topamiz
-
-    if not bosh_turganlar:  # agar hozircha hech kim bo'sh bo'lmasa
-        # xodimlar bilmasdan qolib ketmasligi uchun, "navbatda kutyapti" degan ko'rinadigan xabar yuboramiz
-        tg.xabar_yubor(
-            zayavka["guruh_chat_id"],
-            "🕐 Yangi mijoz navbatga qo'shildi (hozircha barcha xodimlar band).\n"
-            "Kimdir bo'shashi bilan avtomatik taklif yuboriladi.",
-            reply_to=zayavka.get("mijoz_xabar_id")
-        )
-        return  # taklif tugmasi yubormaymiz, taymer tekshiruvchi (check_timers) va bo'shagan xodim o'zi kuzatadi
-
-    # BARCHA bo'sh xodimlarga BITTA umumiy xabarda tag qilamiz (alohida-alohida emas, chalkashtirmasin)
-    # DIQQAT: bu yerda tugma YO'Q — xodim endi FAQAT Mini App ("Ish paneli") orqali qabul qiladi
-    belgilar = tg.xodimlarni_belgila(bosh_turganlar)  # masalan: "Aziz Aliyev, Sardor Karimov"
-    natija = tg.xabar_yubor(
-        zayavka["guruh_chat_id"],
-        f"🆕 Yangi mijoz murojaati! Qabul qilish uchun Ish panelini oching.\n{belgilar}",
-        reply_to=zayavka.get("mijoz_xabar_id")
-    )
-    if natija.get("ok"):  # agar xabar muvaffaqiyatli yuborilgan bo'lsa
-        db.zayavkani_yangila(zayavka["id"], oxirgi_tag_xabar_id=natija["result"]["message_id"])
-
-
 async def tugmani_qayta_ishla(callback):
     # DIQQAT: endi guruhda xodimlar uchun HECH QANDAY tugma yuborilmaydi — barcha amallar
     # (Qabul qildim, Consultatsiya berdim, Telefonni ko'tarmadi, Qayta qabul) FAQAT Mini App
@@ -358,14 +491,8 @@ def zayavkani_qabul_qil(xodim, zayavka_id):
     # xodimni "band" holatiga o'tkazamiz
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka["id"])
 
-    # guruhdagi taklif xabarini tahrirlab, endi kim qabul qilganini ko'rsatamiz — ENDI TUGMASIZ
-    # (bu — Mini App orqali qabul qilingan bo'lsa ham, GURUHDA ko'rinishini ta'minlaydi)
-    if zayavka.get("oxirgi_tag_xabar_id"):  # agar avval yuborilgan tag xabari saqlangan bo'lsa
-        tg.xabar_tahrirla(
-            zayavka["guruh_chat_id"],
-            zayavka["oxirgi_tag_xabar_id"],
-            f"✅ Ushbu mijozni <b>{xodim['ism_familiya']}</b> qabul qildi."
-        )
+    # guruhdagi rasmiy xabar statusini yangilaymiz: "... qabul qildi" (yangi xabar yozilmaydi, xabar tahrirlanadi)
+    guruh_statusini_yangila(zayavka, qabul_status_matni(xodim["ism_familiya"]))
 
     return {"ok": True, "xabar": "Qabul qilindi, omad!"}
 
@@ -403,18 +530,12 @@ def zayavkani_tugat(xodim, zayavka_id):
     # endi mijozga baholash so'rovini yuboramiz (1-5 yulduzcha, majburiy)
     baholash_sorovini_yubor(zayavka, xodim)
 
-    # guruhdagi eng oxirgi xabarni yangilaymiz — ENDI TUGMASIZ (xodim faqat Mini App orqali ishlaydi)
-    if zayavka.get("oxirgi_tag_xabar_id"):
-        tg.xabar_tahrirla(
-            zayavka["guruh_chat_id"],
-            zayavka["oxirgi_tag_xabar_id"],
-            f"☑️ Consultatsiya yakunlandi ({xodim['ism_familiya']})."
-        )
+    # guruhdagi rasmiy xabar statusini yangilaymiz: "Consultatsiya yakunlandi"
+    guruh_statusini_yangila(zayavka, yakun_status_matni(xodim["ism_familiya"]))
 
     # endi xodim bo'shadi — navbatda kutayotgan mijoz bormi tekshiramiz
-    keyingi = db.keyingi_navbatdagi_zayavka()
-    if keyingi:  # agar navbatda kimdir bo'lsa
-        xodimlarni_taklif_qil(keyingi)  # o'sha mijoz uchun taklif jarayonini qayta ishga tushiramiz
+    if db.keyingi_navbatdagi_zayavka():  # agar navbatda kimdir bo'lsa
+        navbat_haqida_xodimga_bildir(xodim)  # faqat shu bo'shagan xodimga shaxsiy eslatma yuboramiz
 
     return {"ok": True, "xabar": "Yakunlandi."}
 
@@ -459,9 +580,8 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
         # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz — bu holat allaqachon
         # Mini App'dagi "Qayta aloqaga chiqish" bo'limida to'liq ko'rinib turibdi
 
-        keyingi = db.keyingi_navbatdagi_zayavka()  # xodim bo'shagani uchun navbatdagi mijozga o'tishi mumkin
-        if keyingi:
-            xodimlarni_taklif_qil(keyingi)
+        if db.keyingi_navbatdagi_zayavka():  # xodim bo'shagani uchun navbatdagi mijozga o'tishi mumkin
+            navbat_haqida_xodimga_bildir(xodim)
 
         return {
             "ok": True,
@@ -487,9 +607,8 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
     # "Javob bermadi" bo'limida to'liq ko'rinib turibdi
 
     # navbatda kutayotgan boshqa mijoz bormi tekshiramiz (xuddi oddiy yakunlashdagidek)
-    keyingi = db.keyingi_navbatdagi_zayavka()
-    if keyingi:
-        xodimlarni_taklif_qil(keyingi)
+    if db.keyingi_navbatdagi_zayavka():
+        navbat_haqida_xodimga_bildir(xodim)
 
     return {"ok": True, "yopildimi": True, "xabar": "Mijoz bilan bog'lanib bo'lmadi, zayavka yopildi."}
 

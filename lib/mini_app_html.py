@@ -351,6 +351,14 @@ const IKON = {
     calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
 };
 
+// XAVFSIZLIK: mijoz yozgan har qanday matn (xabar, ism, kompaniya, izoh) sahifaga qo'yilishidan oldin shu funksiyadan
+// o'tishi shart — aks holda mijoz "<img onerror=...>" kabi narsa yozib, xodim/rahbar sahifasida kod ishga tushirishi mumkin
+function esc(qiymat) {
+    return String(qiymat === null || qiymat === undefined ? '' : qiymat)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 async function so_rov(manzil, usul, gavda) {
     const sozlamalar = { method: usul, headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': tg.initData } };
     if (gavda) sozlamalar.body = JSON.stringify(gavda);
@@ -388,7 +396,7 @@ function sahifaOch(nomi) {
 
 function kompaniyaHtml(z) {
     // agar Google Sheets orqali kompaniya nomi aniqlangan bo'lsa, uni belgi (chip) sifatida ko'rsatamiz
-    return z.kompaniya_nomi ? `<div class="kompaniya-belgisi">🏢 ${z.kompaniya_nomi}</div>` : '';
+    return z.kompaniya_nomi ? `<div class="kompaniya-belgisi">🏢 ${esc(z.kompaniya_nomi)}</div>` : '';
 }
 
 function kartaChiz(z, ichkiQator, oddiymi, tartib) {
@@ -401,7 +409,7 @@ function kartaChiz(z, ichkiQator, oddiymi, tartib) {
             </div>
             ${kompaniyaHtml(z)}
             ${ichkiQator}
-            <div class="matn">${(z.matn || '').slice(0, 180)}</div>
+            <div class="matn">${esc((z.matn || '').slice(0, 180))}</div>
         </div>`;
 }
 
@@ -488,8 +496,8 @@ async function yukla() {
                         <span class="davomiylik">0:00</span>
                     </div>
                     ${kompaniyaHtml(z)}
-                    <div class="kim">👤 ${z.xodim_ismi}</div>
-                    <div class="matn">${(z.matn || '').slice(0, 150)}</div>
+                    <div class="kim">👤 ${esc(z.xodim_ismi)}</div>
+                    <div class="matn">${esc((z.matn || '').slice(0, 150))}</div>
                     ${amal_html}
                 </div>`;
         }).join('');
@@ -513,8 +521,8 @@ async function yukla() {
                         <span class="urinish-belgisi" style="margin-top:0">📵 ${z.qongiroq_soni || 0}/${QONGIROQ_MAKS}</span>
                     </div>
                     ${kompaniyaHtml(z)}
-                    <div class="kim">👤 ${z.xodim_ismi}</div>
-                    <div class="matn">${(z.matn || '').slice(0, 150)}</div>
+                    <div class="kim">👤 ${esc(z.xodim_ismi)}</div>
+                    <div class="matn">${esc((z.matn || '').slice(0, 150))}</div>
                     ${amal_html}
                 </div>`;
         }).join('');
@@ -532,7 +540,7 @@ async function yukla() {
                 <div class="karta" style="border-left-color:#7f1d1d">
                     <div class="sarlavha"><span>Mijoz #${z.id}</span><span style="color:#ef4444;font-size:12px;font-weight:700">Qolib ketdi</span></div>
                     ${kompaniyaHtml(z)}
-                    <div class="matn">${(z.matn || '').slice(0, 150)}</div>
+                    <div class="matn">${esc((z.matn || '').slice(0, 150))}</div>
                     ${tugma}
                 </div>`;
         }).join('');
@@ -779,21 +787,24 @@ function mijozKartasiChiz(mij, izohliMi) {
             else if (mij.yulduz <= 2) { holatMatni = '👎 Salbiy'; holatRang = '#ef4444'; }
             bahoHtml = `${'⭐'.repeat(mij.yulduz)} <span style="color:${holatRang};font-weight:700">${holatMatni}</span>`;
         }
-        // DIQQAT: mijozning yozgan IZOHI (komentariyasi) atayin ko'rsatilmaydi — faqat baho
-        // (yulduz/ijobiy-salbiy) ko'rinadi, matnli izoh xodimlarga ko'rinmasligi kerak
-        qoshimcha_html = `<div style="margin-top:8px;font-size:13px">${bahoHtml}</div>`;
+        // mijozning yozgan izohi (komentariyasi). Bu blok FAQAT rahbarlarga (owner/super_user) chiziladi —
+        // oddiy xodim uchun izohliMi=false beriladi (tafsilotTabiniChiz'ga qarang), shuning uchun u buni ko'rmaydi
+        const izohHtml = mij.izoh
+            ? `<div class="matn" style="margin-top:6px;margin-bottom:0;border-top:1px solid var(--border-soft);padding-top:6px">💬 «${esc(mij.izoh)}»</div>`
+            : '';
+        qoshimcha_html = `<div style="margin-top:8px;font-size:13px">${bahoHtml}</div>${izohHtml}`;
     } else if (mij.qongiroq_soni) {
         qoshimcha_html = `<div class="urinish-belgisi">📵 ${mij.qongiroq_soni}/${QONGIROQ_MAKS} marta urinilgan</div>`;
     }
     return `
         <div class="karta oddiy">
             <div class="sarlavha">
-                <span>${mij.mijoz_ismi}</span>
+                <span>${esc(mij.mijoz_ismi)}</span>
                 <span class="davomiylik">${(mij.daqiqa !== null && mij.daqiqa !== undefined) ? mij.daqiqa + ' daq' : '—'}</span>
             </div>
-            ${mij.kompaniya_nomi ? `<div class="kompaniya-belgisi">🏢 ${mij.kompaniya_nomi}</div>` : ''}
-            <div class="kim">📞 ${mij.mijoz_telefon || '—'} &nbsp;·&nbsp; 🆔 INN: ${mij.mijoz_inn || '—'}</div>
-            <div class="matn">${(mij.matn || 'Sabab yozilmagan').slice(0, 250)}</div>
+            ${mij.kompaniya_nomi ? `<div class="kompaniya-belgisi">🏢 ${esc(mij.kompaniya_nomi)}</div>` : ''}
+            <div class="kim">📞 ${esc(mij.mijoz_telefon) || '—'} &nbsp;·&nbsp; 🆔 INN: ${esc(mij.mijoz_inn) || '—'}</div>
+            <div class="matn">${esc((mij.matn || 'Sabab yozilmagan').slice(0, 250))}</div>
             ${qoshimcha_html}
         </div>`;
 }
@@ -872,7 +883,7 @@ function kompaniyalarniKorsat() {
 
     const qatorlar = royxat.map(k => `
         <tr>
-            <td>${k.kompaniya}</td>
+            <td>${esc(k.kompaniya)}</td>
             <td>${k.jami}</td>
             <td style="color:#3b82f6;font-weight:700">${k.eng_kop_yonalish}</td>
             <td style="font-size:11px;color:var(--text-faint)">ZUB:${k.taqsimot.ZUB} · Bux:${k.taqsimot.Buxgalteriya} · UNF:${k.taqsimot.UNF}</td>

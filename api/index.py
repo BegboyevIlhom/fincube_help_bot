@@ -164,6 +164,20 @@ async def app_qayta_qabul(so_rov: Request):
     return zayavkani_qayta_qabul_qil(xodim, gavda.get("zayavka_id"))
 
 
+def _rolga_qarab_tozala(tekshiruvchi, malumot):
+    # Mijozning bahosi va izohi FAQAT rahbarlarga (owner/super_user) yuboriladi. Oddiy xodim o'z
+    # ko'rsatkichlarini ochganda bu maydonlar serverning o'zida olib tashlanadi — shunda ular
+    # brauzerga umuman yetib bormaydi (faqat ekranda yashirish yetarli emas)
+    if tekshiruvchi.get("rol") in ("owner", "super_user"):
+        return malumot
+    for kalit in ("tugallandi", "qayta_aloqa", "javob_bermadi"):
+        for mijoz in malumot.get(kalit, []):
+            mijoz["yulduz"] = None
+            mijoz["izoh"] = None
+            mijoz["baho_holati"] = None
+    return malumot
+
+
 @app.get("/api/app/xodim-mijozlari/{xodim_id}")
 async def app_xodim_mijozlari(xodim_id: int, so_rov: Request):
     # Analitikada bitta xodim ustiga bosilganda, uning BUGUN gaplashgan mijozlari 3 toifada
@@ -175,7 +189,7 @@ async def app_xodim_mijozlari(xodim_id: int, so_rov: Request):
     )
     if not ruxsat_bormi:
         return {"ok": False, "xato": "Sizda bu ma'lumotni ko'rish huquqi yo'q."}
-    return {"ok": True, **db.xodimning_bugungi_mijozlari(xodim_id)}
+    return {"ok": True, **_rolga_qarab_tozala(tekshiruvchi, db.xodimning_bugungi_mijozlari(xodim_id))}
 
 
 @app.get("/api/app/xodim-oylik-mijozlari/{xodim_id}")
@@ -188,4 +202,4 @@ async def app_xodim_oylik_mijozlari(xodim_id: int, so_rov: Request):
     )
     if not ruxsat_bormi:
         return {"ok": False, "xato": "Sizda bu ma'lumotni ko'rish huquqi yo'q."}
-    return {"ok": True, **db.xodimning_oylik_mijozlari(xodim_id)}
+    return {"ok": True, **_rolga_qarab_tozala(tekshiruvchi, db.xodimning_oylik_mijozlari(xodim_id))}

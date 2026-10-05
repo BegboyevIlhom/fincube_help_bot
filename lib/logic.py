@@ -105,13 +105,24 @@ def shubhali_raqamlarni_top(matn):
         return []
 
     natija = []  # topilgan shubhali (9 ham, 12 ham bo'lmagan) raqamlarni shu yerga yig'amiz
+
+    def tekshir(parcha):
+        faqat_raqam = re.sub(r"\D", "", parcha)  # parchadan faqat raqamlarni qoldiramiz
+        # 7-8 yoki 10-11 xonali raqamlar — "deyarli 9 xonali" deb hisoblanadi (typo bo'lishi mumkin)
+        if len(faqat_raqam) in (7, 8, 10, 11):
+            natija.append(faqat_raqam)
+            return True
+        return False
+
     # xuddi asosiy funksiyadagi kabi, avval vergul/nuqta-vergul (bo'shliqdan oldin)/yangi qator bo'yicha bo'lamiz
     asosiy_boklar = re.split(r"[,;]\s+|\n+", matn)
 
     for bolak in asosiy_boklar:
-        faqat_raqam = re.sub(r"\D", "", bolak)  # bo'lakdan faqat raqamlarni qoldiramiz
-        # 7-8 yoki 10-11 xonali raqamlar — "deyarli 9 xonali" deb hisoblanadi (typo bo'lishi mumkin)
-        if len(faqat_raqam) in (7, 8, 10, 11):
-            natija.append(faqat_raqam)
+        if tekshir(bolak):  # bo'lakning o'zi to'g'ridan-to'g'ri shubhali raqam bo'lsa
+            continue
+        # VERGULSIZ yozilgan holat ("INN 310260424 tel 90956864"): "INN", "tel" kabi so'zlar bo'yicha
+        # bo'lib, har bir qismni alohida tekshiramiz (aks holda ikkala raqam birlashib ketib, xato topilmaydi)
+        for qism in _KALIT_SOZLAR.split(bolak):
+            tekshir(qism)
 
     return list(dict.fromkeys(natija))  # takrorlarni olib tashlab qaytaramiz

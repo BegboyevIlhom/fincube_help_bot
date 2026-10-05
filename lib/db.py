@@ -109,20 +109,41 @@ def ochiq_zayavka_top(mijoz_id):
 
 
 def zayavka_yarat(mijoz_id, guruh_chat_id, mijoz_xabar_id, matn):
-    # yangi zayavka yozuvini "malumot_kutilmoqda" holatida yaratadi
-    yangi = _client.table("zayavkalar").insert({
+    # yangi zayavka yozuvini "malumot_kutilmoqda" holatida yaratadi.
+    # "xabarlar" — zayavkadagi har bir xabarning (ID, matn) ro'yxati: mijoz xabarini TAHRIRLAGANDA
+    # aynan qaysi xabar o'zgargani va uni qanday almashtirish kerakligini bilish uchun kerak
+    satr = {
         "mijoz_id": mijoz_id,
         "guruh_chat_id": guruh_chat_id,
         "mijoz_xabar_id": mijoz_xabar_id,
         "matn": matn,
         "holat": "malumot_kutilmoqda"
-    }).execute()
+    }
+    try:
+        yangi = _client.table("zayavkalar").insert(
+            {**satr, "xabarlar": [{"id": mijoz_xabar_id, "t": matn}]}
+        ).execute()
+    except Exception as xato:
+        if "xabarlar" not in str(xato):
+            raise  # boshqa turdagi xatolik — yashirmaymiz
+        # "xabarlar" ustuni bazada hali yo'q (migratsiya bajarilmagan) — botni to'xtatmasdan, eski usulda yaratamiz
+        print("OGOHLANTIRISH: zayavkalar.xabarlar ustuni topilmadi, migratsiya SQL'ini bajaring")
+        yangi = _client.table("zayavkalar").insert(satr).execute()
     return yangi.data[0]
 
 
-def zayavka_matnini_yangila(zayavka_id, yangi_matn):
-    # mijozdan kelgan qo'shimcha xabarni zayavka matniga qo'shib yangilaydi
-    _client.table("zayavkalar").update({"matn": yangi_matn}).eq("id", zayavka_id).execute()
+def zayavka_matnini_yangila(zayavka_id, yangi_matn, xabarlar=None):
+    # zayavka matnini (va agar berilsa, xabarlar ro'yxatini) yangilaydi
+    maydonlar = {"matn": yangi_matn}
+    if xabarlar is not None:
+        maydonlar["xabarlar"] = xabarlar
+    try:
+        _client.table("zayavkalar").update(maydonlar).eq("id", zayavka_id).execute()
+    except Exception as xato:
+        if xabarlar is None or "xabarlar" not in str(xato):
+            raise
+        print("OGOHLANTIRISH: zayavkalar.xabarlar ustuni topilmadi, migratsiya SQL'ini bajaring")
+        _client.table("zayavkalar").update({"matn": yangi_matn}).eq("id", zayavka_id).execute()
 
 
 def zayavka_id_orqali(zayavka_id):
@@ -136,6 +157,44 @@ def zayavka_id_orqali(zayavka_id):
 def zayavkani_yangila(zayavka_id, **maydonlar):
     # zayavkaning istalgan maydonlarini (holat, rang va h.k.) yangilash uchun umumiy funksiya
     _client.table("zayavkalar").update(maydonlar).eq("id", zayavka_id).execute()
+
+
+def zayavkani_shartli_yangila(zayavka_id, ruxsat_etilgan_holatlar, **maydonlar):
+    # ATOMIK: zayavkani FAQAT hozirgi holati ruxsat etilganlardan biri bo'lsagina yangilaydi
+    # (tekshirish va yozish bitta bazaviy so'rovda — poyga holati bo'lmaydi).
+    # Yangilangan bo'lsa True, aks holda (holat allaqachon boshqacha) False qaytaradi
+    natija = (_client.table("zayavkalar").update(maydonlar)
+              .eq("id", zayavka_id)
+              .in_("holat", list(ruxsat_etilgan_holatlar))
+              .execute())
+    return len(natija.data) > 0
+
+
+def zayavkani_atomik_navbatga_qoy(zayavka_id):
+    # zayavkani "navbatda" holatiga o'tkazadi va taymerni shu daqiqadan boshlaydi — lekin FAQAT
+    # u hali navbatga qo'yilmagan bo'lsa. Shu tufayli ikkita deyarli bir vaqtdagi xabar/tahrir
+    # mijozga ikki marta "qabul qilindi" xabarini yubormaydi
+    return zayavkani_shartli_yangila(
+        zayavka_id, ["malumot_kutilmoqda", "shartnoma_yoq"],
+        holat="navbatda", yaratilgan_vaqt=hozir().isoformat()
+    )
+
+
+def mijoz_topilsin(telegram_id):
+    # mijozni Telegram ID bo'yicha FAQAT QIDIRADI (topilmasa yangi yaratmaydi) — tahrirlangan xabarlar uchun
+    natija = _client.table("mijozlar").select("*").eq("telegram_id", telegram_id).execute()
+    if natija.data:
+        return natija.data[0]
+    return None
+
+
+def mijozning_oxirgi_zayavkalari(mijoz_id, soni=5):
+    # mijozning eng oxirgi zayavkalarini qaytaradi (yangisi birinchi) — tahrirlangan xabar qaysi
+    # zayavkaga tegishli ekanini topish uchun
+    natija = (_client.table("zayavkalar").select("*")
+              .eq("mijoz_id", mijoz_id)
+              .order("id", desc=True).limit(soni).execute())
+    return natija.data
 
 
 def navbatdagi_zayavkalar():

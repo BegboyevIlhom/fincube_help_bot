@@ -2,6 +2,7 @@
 # Uni tashqaridan api/index.py chaqiradi, u esa tashqi cron xizmati tomonidan
 # har 1 daqiqada chaqiriladi
 
+import html  # kompaniya nomini Telegram HTML xabariga xavfsiz qo'yish uchun
 from datetime import timedelta  # kunlarni hisoblash uchun (baholash muddatini tekshirish uchun kerak)
 from lib import db  # ma'lumotlar bazasi funksiyalari
 from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
@@ -50,16 +51,13 @@ def bitta_zayavkani_tekshir(zayavka):
 
 
 def majburiy_signal_yubor(zayavka):
-    # oxirgi 5 daqiqa qolganda — BAND bo'lganlar ham jumladan, FAQAT rol='xodim' bo'lganlarga
-    # BITTA majburiy xabar yuboriladi (owner va super_user bu yerga kirmaydi)
+    # oxirgi 5 daqiqa qolganda — BAND bo'lganlar ham jumladan, "owner"dan boshqa HAMMA xodimga
+    # SHAXSIY chatda majburiy eslatma yuboriladi. Guruhda hech narsa ko'rinmaydi
     barcha = [x for x in db.barcha_xodimlar() if x.get("rol") != "owner"]  # "owner"dan boshqa hamma (ishlaydiganlar)
-    belgilar = tg.xodimlarni_belgila(barcha)  # hammasini bitta qatorda belgilaymiz
-    tg.xabar_yubor(
-        zayavka["guruh_chat_id"],
-        f"🔴 <b>DIQQAT!</b> Mijoz uchun atigi 5 daqiqa qoldi!\n"
-        f"{belgilar} — iltimos, imkoniyat bo'lsa Mini App orqali qabul qiling 👇",
-        reply_to=zayavka.get("mijoz_xabar_id")
-    )
+    matn = "🔴 <b>DIQQAT!</b> Mijoz uchun atigi 5 daqiqa qoldi!\nImkoniyat bo'lsa, Ish panelidan qabul qiling 👇"
+    if zayavka.get("kompaniya_nomi"):  # qaysi mijoz ekanini bilishlari uchun kompaniya nomini ham qo'shamiz
+        matn = f"🔴 <b>DIQQAT!</b> Mijoz uchun atigi 5 daqiqa qoldi!\n🏢 {html.escape(zayavka['kompaniya_nomi'])}\nImkoniyat bo'lsa, Ish panelidan qabul qiling 👇"
+    tg.xodimlarga_shaxsiy_xabar(barcha, matn)
     # bu zayavka uchun majburiy signal allaqachon yuborilganini belgilab qo'yamiz (qayta-qayta yubormaslik uchun)
     db.zayavkani_yangila(zayavka["id"], rang="qizil", besh_daqiqa_signal_yuborildimi=True)
     return {"zayavka_id": zayavka["id"], "harakat": "majburiy_signal_yuborildi"}
