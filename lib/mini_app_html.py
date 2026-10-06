@@ -175,6 +175,11 @@ MINI_APP_HTML = """
         background: var(--chip-bg); color: var(--text-muted);
         border: 1px solid var(--chip-border); box-shadow: none;
     }
+    .btn-kutish {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #2b1700; box-shadow: 0 3px 10px rgba(245,158,11,0.3);
+    }
+    .kutish-vaqti { font-size: 13px; font-weight: 800; color: #d97706; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .urinish-belgisi { font-size: 12px; color: #ca8a04; font-weight: 700; margin-top: 8px; }
     button:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
@@ -288,6 +293,9 @@ MINI_APP_HTML = """
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span> Consultatsiya jarayonda</div>
         <div id="jarayon-royxati"><div class="skeleton-karta" style="animation-delay:.06s"></div></div>
+
+        <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Kutish rejimida (muammo hali hal bo'lmagan)</div>
+        <div id="kutish-royxati"><div class="skeleton-karta" style="animation-delay:.12s"></div></div>
 
         <div class="bolim-sarlavha"><span class="ikon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span> Qayta aloqaga chiqish</div>
         <div id="qayta-aloqa-royxati"><div class="skeleton-karta" style="animation-delay:.18s"></div></div>
@@ -425,7 +433,7 @@ async function yukla() {
         document.getElementById('xodim-holati').textContent = m.xato || 'Noma\\'lum xatolik';
         // MUHIM: ro'yxat bo'limlari ham "shimmer" holatida abadiy qolib ketmasin — ularga ham aniq xabar chiqaramiz
         const xabar_html = `<div class="bosh-holat">⚠️ ${m.xato || 'Yuklab bo\\'lmadi'}</div>`;
-        ['navbat-royxati', 'jarayon-royxati', 'qayta-aloqa-royxati', 'otib-ketgan-royxati'].forEach(id => {
+        ['navbat-royxati', 'jarayon-royxati', 'kutish-royxati', 'qayta-aloqa-royxati', 'otib-ketgan-royxati'].forEach(id => {
             const joy = document.getElementById(id);
             if (joy) joy.innerHTML = xabar_html;
         });
@@ -486,14 +494,41 @@ async function yukla() {
             const amal_html = (bu_meniki && !kuzatuvchimi)
                 ? `<div id="amal-${z.id}">
                        <button class="btn-tugat" onclick="tugatishniBoshla(${z.id})">☑️ Consultatsiya berdim</button>
+                       <button class="btn-kutish" onclick="kutishgaQoy(${z.id})" style="margin-top:8px">⏳ Kutish rejimi (muammo hal bo'lmadi)</button>
                        <button class="btn-javobyoq" onclick="javobBermadi(${z.id})" style="margin-top:8px">📵 Telefonni ko'tarmadi${urinish_belgisi}</button>
                    </div>`
                 : (z.qongiroq_soni ? `<div class="urinish-belgisi">📵 ${z.qongiroq_soni}/${QONGIROQ_MAKS} marta urinilgan</div>` : '');
             return `
-                <div class="karta ${bu_meniki ? 'mening' : 'oddiy'}" data-boshlangan="${z.jarayon_boshlangan_vaqt || ''}">
+                <div class="karta ${bu_meniki ? 'mening' : 'oddiy'}" data-boshlangan="${z.jarayon_boshlangan_vaqt || ''}" data-kutilgan="${z.kutish_jami_soniya || 0}">
                     <div class="sarlavha">
                         <span>Mijoz #${z.id} ${bu_meniki ? '<span class="siz-belgisi">SIZ</span>' : ''}</span>
                         <span class="davomiylik">0:00</span>
+                    </div>
+                    ${kompaniyaHtml(z)}
+                    <div class="kim">👤 ${esc(z.xodim_ismi)}</div>
+                    <div class="matn">${esc((z.matn || '').slice(0, 150))}</div>
+                    ${amal_html}
+                </div>`;
+        }).join('');
+    }
+
+    // KUTISH REJIMIDA — xodim mijoz bilan gaplashgan, lekin muammo hali hal bo'lmagan. Xodim bo'sh, mijoz esa
+    // "Davom ettirish"ni kutmoqda. Bu yerdagi vaqt gaplashish davomiyligiga QO'SHILMAYDI
+    const kutishRoyxat = document.getElementById('kutish-royxati');
+    if (!m.kutishdagilar || m.kutishdagilar.length === 0) {
+        kutishRoyxat.innerHTML = `<div class="bosh-holat">Kutish rejimida mijoz yo'q</div>`;
+    } else {
+        const bandmi = xodim.holat !== 'bosh';
+        kutishRoyxat.innerHTML = m.kutishdagilar.map(z => {
+            const bu_meniki = z.biriktirilgan_xodim_id === xodim.id;
+            const amal_html = (bu_meniki && !kuzatuvchimi)
+                ? `<button class="btn-qabul" ${bandmi ? 'disabled' : ''} onclick="kutishdanDavomEt(${z.id})">▶️ Davom ettirish</button>`
+                : '';
+            return `
+                <div class="karta ${bu_meniki ? 'mening' : 'oddiy'}" data-kutish-boshlangan="${z.kutish_boshlangan_vaqt || ''}" style="border-left-color:#f59e0b">
+                    <div class="sarlavha">
+                        <span>Mijoz #${z.id} ${bu_meniki ? '<span class="siz-belgisi">SIZ</span>' : ''}</span>
+                        <span class="kutish-vaqti">⏳ 0:00</span>
                     </div>
                     ${kompaniyaHtml(z)}
                     <div class="kim">👤 ${esc(z.xodim_ismi)}</div>
@@ -702,6 +737,38 @@ async function qaytaQabulQil(zayavka_id) {
             if (tg.showPopup) tg.showPopup({ message: natija.xabar || '' }); else alert(natija.xabar || '');
         }
         yukla();  // panelni yangilaymiz — mijoz endi "Consultatsiya jarayonda" bo'limiga o'tadi
+    } finally {
+        amalKutilmoqda.delete(zayavka_id);
+    }
+}
+
+// "Kutish rejimi" tugmasi bosilganda: mijoz kutish bo'limiga o'tadi, vaqt hisoblanmaydi, xodim bo'shaydi
+async function kutishgaQoy(zayavka_id) {
+    if (amalKutilmoqda.has(zayavka_id)) return;  // allaqachon so'rov ketayapti — qayta yubormaymiz
+    amalKutilmoqda.add(zayavka_id);
+    try {
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        const natija = await so_rov('/api/app/kutish', 'POST', { zayavka_id: zayavka_id });
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(natija.ok ? 'success' : 'error');
+        if (tg.showPopup) tg.showPopup({ message: natija.xabar || '' }); else alert(natija.xabar || '');
+        yukla();
+    } finally {
+        amalKutilmoqda.delete(zayavka_id);
+    }
+}
+
+// Kutish rejimidagi mijozda "Davom ettirish" bosilganda: mijoz yana "jarayonda"ga qaytadi
+async function kutishdanDavomEt(zayavka_id) {
+    if (amalKutilmoqda.has(zayavka_id)) return;
+    amalKutilmoqda.add(zayavka_id);
+    try {
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        const natija = await so_rov('/api/app/kutishdan-davom', 'POST', { zayavka_id: zayavka_id });
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(natija.ok ? 'success' : 'error');
+        if (!natija.ok) {
+            if (tg.showPopup) tg.showPopup({ message: natija.xabar || '' }); else alert(natija.xabar || '');
+        }
+        yukla();
     } finally {
         amalKutilmoqda.delete(zayavka_id);
     }
@@ -927,10 +994,25 @@ function taymerlarniYangila() {
 
     document.querySelectorAll('.karta[data-boshlangan]:not([data-boshlangan=""])').forEach(karta => {
         const boshlangan = new Date(karta.dataset.boshlangan).getTime();
-        const otgan = Math.max(0, Math.floor((Date.now() - boshlangan) / 1000));
+        const kutilgan = parseInt(karta.dataset.kutilgan || '0', 10) || 0;  // kutish rejimida o'tgan soniyalar — hisoblanmaydi
+        const otgan = Math.max(0, Math.floor((Date.now() - boshlangan) / 1000) - kutilgan);
         const belgisi = karta.querySelector('.davomiylik');
         if (!belgisi) return;
         belgisi.textContent = `${Math.floor(otgan / 60)}:${String(otgan % 60).padStart(2, '0')} gaplashmoqda`;
+    });
+
+    // kutish rejimidagi mijoz qancha vaqtdan beri kutayotganini ko'rsatamiz (unutilib qolmasligi uchun)
+    document.querySelectorAll('.karta[data-kutish-boshlangan]:not([data-kutish-boshlangan=""])').forEach(karta => {
+        const boshlangan = new Date(karta.dataset.kutishBoshlangan).getTime();
+        const otgan = Math.max(0, Math.floor((Date.now() - boshlangan) / 1000));
+        const belgisi = karta.querySelector('.kutish-vaqti');
+        if (!belgisi) return;
+        const soat = Math.floor(otgan / 3600);
+        const daqiqa = Math.floor((otgan % 3600) / 60);
+        const soniya = String(otgan % 60).padStart(2, '0');
+        belgisi.textContent = soat > 0
+            ? `⏳ ${soat}:${String(daqiqa).padStart(2, '0')}:${soniya}`
+            : `⏳ ${daqiqa}:${soniya}`;
     });
 }
 

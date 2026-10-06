@@ -132,3 +132,10 @@ alter table mijozlar add column if not exists kutayotgan_xabar text;
 -- ============================================================
 alter table zayavkalar add column if not exists xabarlar jsonb not null default '[]'::jsonb;
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- QO'SHIMCHA: "Kutish rejimi" (mijoz bilan gaplashildi, lekin muammo hali hal bo'lmagan)
+-- ============================================================
+alter table zayavkalar add column if not exists kutish_boshlangan_vaqt timestamptz;
+alter table zayavkalar add column if not exists kutish_jami_soniya integer not null default 0;
+NOTIFY pgrst, 'reload schema';

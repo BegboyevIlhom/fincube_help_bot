@@ -15,6 +15,8 @@ from lib.webhook_handler import (
     yonalish_royxatini_ornat,  # Mini App'da yo'nalish(lar)ni saqlash funksiyasi
     zayavkani_javob_bermadi_deb_belgila,  # "Telefonni ko'tarmadi" umumiy funksiyasi
     zayavkani_qayta_qabul_qil,  # "qayta aloqaga chiqish"dan "qabul qilish" umumiy funksiyasi
+    zayavkani_kutishga_qoy,  # "Kutish rejimi"ni yoqish (muammo hali hal bo'lmaganda)
+    zayavkani_kutishdan_davom_ettir,  # kutish rejimidagi mijozni "Davom ettirish"
 )
 from lib.timer_handler import barcha_navbatni_tekshir  # taymerlarni tekshiruvchi funksiya
 from lib.dashboard_html import DASHBOARD_HTML  # rahbarlar paneli uchun tayyor HTML sahifa
@@ -162,6 +164,26 @@ async def app_qayta_qabul(so_rov: Request):
         return {"ok": False, "xabar": "Siz xodimlar ro'yxatida emassiz."}
     gavda = await so_rov.json()
     return zayavkani_qayta_qabul_qil(xodim, gavda.get("zayavka_id"))
+
+
+@app.post("/api/app/kutish")
+async def app_kutish(so_rov: Request):
+    # Mini App'da "Kutish rejimi" tugmasi bosilganda shu manzilga so'rov keladi
+    xodim = _foydalanuvchini_tekshir(so_rov)
+    if not xodim:
+        return {"ok": False, "xabar": "Siz xodimlar ro'yxatida emassiz."}
+    gavda = await so_rov.json()
+    return zayavkani_kutishga_qoy(xodim, gavda.get("zayavka_id"))
+
+
+@app.post("/api/app/kutishdan-davom")
+async def app_kutishdan_davom(so_rov: Request):
+    # Mini App'da kutish rejimidagi mijoz uchun "Davom ettirish" bosilganda shu manzilga so'rov keladi
+    xodim = _foydalanuvchini_tekshir(so_rov)
+    if not xodim:
+        return {"ok": False, "xabar": "Siz xodimlar ro'yxatida emassiz."}
+    gavda = await so_rov.json()
+    return zayavkani_kutishdan_davom_ettir(xodim, gavda.get("zayavka_id"))
 
 
 def _rolga_qarab_tozala(tekshiruvchi, malumot):

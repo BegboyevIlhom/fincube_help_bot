@@ -133,6 +133,14 @@ def qabul_status_matni(xodim_ismi):
     )
 
 
+def kutish_status_matni(xodim_ismi):
+    ism = html.escape(xodim_ismi)
+    return (
+        f"⏳ Murojaatingiz ustida ish davom etmoqda (<b>{ism}</b>). Natija bo'yicha siz bilan yana bog'lanamiz.\n\n"
+        f"⏳ Работа по вашему обращению продолжается (<b>{ism}</b>). Мы свяжемся с вами по результату."
+    )
+
+
 def yakun_status_matni(xodim_ismi):
     ism = html.escape(xodim_ismi)
     return (
@@ -540,6 +548,75 @@ def zayavkani_tugat(xodim, zayavka_id):
     return {"ok": True, "xabar": "Yakunlandi."}
 
 
+YANGI_USTUN_XABARI = ("Bazaga yangi ustunlar qo'shilmagan. Iltimos, MIGRATSIYA_kutish.sql faylini "
+                      "Supabase SQL Editor'da bajaring.")
+
+
+def zayavkani_kutishga_qoy(xodim, zayavka_id):
+    # xodim mijoz bilan gaplashdi, lekin muammo hali hal bo'lmadi (masalan biror narsani tekshirish yoki
+    # mijozdan hujjat kutish kerak) — "Kutish rejimi"ni yoqadi. Shu paytdan boshlab gaplashish vaqti
+    # HISOBLANMAYDI, xodim esa bo'shaydi va boshqa mijozni qabul qila oladi
+    if xodim.get("rol") == "owner":  # "owner" hech narsani o'zgartira olmaydi
+        return {"ok": False, "xabar": "Sizda bu amalni bajarish huquqi yo'q (faqat kuzatish)."}
+
+    zayavka = db.zayavka_id_orqali(zayavka_id)
+    if not zayavka:
+        return {"ok": False, "xabar": "Bu zayavka topilmadi."}
+    if zayavka.get("holat") != "jarayonda":  # faqat hozir gaplashilayotgan zayavka uchun
+        return {"ok": False, "xabar": "Bu mijoz hozir jarayonda emas."}
+    if zayavka.get("biriktirilgan_xodim_id") != xodim["id"]:  # faqat o'zining mijozi uchun
+        return {"ok": False, "xabar": "Bu sizning mijozingiz emas."}
+
+    try:
+        muvaffaqiyatli = db.zayavkani_atomik_kutishga_qoy(zayavka_id, xodim["id"])
+    except Exception as xato:
+        if "kutish_" in str(xato):  # migratsiya SQL'i hali bajarilmagan
+            print("OGOHLANTIRISH: zayavkalar.kutish_* ustunlari topilmadi, MIGRATSIYA_kutish.sql'ni bajaring")
+            return {"ok": False, "xabar": YANGI_USTUN_XABARI}
+        raise
+    if not muvaffaqiyatli:  # tugma qayta bosilgan yoki zayavka allaqachon boshqa holatga o'tgan
+        return {"ok": False, "xabar": "Bu mijoz allaqachon kutish rejimida yoki yakunlangan."}
+
+    # xodim BO'SHAYDI — boshqa mijozni qabul qila oladi
+    db.xodim_holatini_yangila(xodim["id"], "bosh", None)
+
+    # guruhdagi rasmiy xabar statusi: "Murojaatingiz ustida ish davom etmoqda"
+    guruh_statusini_yangila(zayavka, kutish_status_matni(xodim["ism_familiya"]))
+
+    # xodim bo'shagani uchun, navbatda mijoz kutayotgan bo'lsa — shu xodimga eslatma yuboramiz
+    if db.keyingi_navbatdagi_zayavka():
+        navbat_haqida_xodimga_bildir(xodim)
+
+    return {"ok": True, "xabar": "Kutish rejimi yoqildi. Vaqt hisoblanmaydi, siz bo'shadingiz."}
+
+
+def zayavkani_kutishdan_davom_ettir(xodim, zayavka_id):
+    # "Kutish rejimida" turgan mijozni xodim "Davom ettirish" bilan qaytaradi: zayavka yana "jarayonda"
+    # bo'ladi, gaplashish vaqti qolgan joyidan davom etadi (kutishda o'tgan vaqt qo'shilmaydi)
+    if xodim.get("rol") == "owner":
+        return {"ok": False, "xabar": "Sizda bu amalni bajarish huquqi yo'q (faqat kuzatish)."}
+    if xodim.get("holat") == "band":  # hozir boshqa mijoz bilan band bo'lsa, ikkalasini bir vaqtda ololmaydi
+        return {"ok": False, "xabar": "Siz hozir boshqa mijoz bilan bandsiz. Avval uni yakunlang yoki kutishga qo'ying."}
+
+    zayavka = db.zayavka_id_orqali(zayavka_id)
+    if not zayavka:
+        return {"ok": False, "xabar": "Bu zayavka topilmadi."}
+    if zayavka.get("holat") != "kutish":
+        return {"ok": False, "xabar": "Bu mijoz endi kutish rejimida emas."}
+    if zayavka.get("biriktirilgan_xodim_id") != xodim["id"]:  # faqat avval mas'ul bo'lgan xodim davom ettiradi
+        return {"ok": False, "xabar": "Bu sizning mijozingiz emas."}
+
+    if not db.zayavkani_atomik_kutishdan_qaytar(zayavka, xodim["id"]):
+        return {"ok": False, "xabar": "Bu mijoz endi kutish rejimida emas."}
+
+    db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
+
+    # guruhdagi rasmiy xabar statusini yana "... qabul qildi" ga qaytaramiz
+    guruh_statusini_yangila(zayavka, qabul_status_matni(xodim["ism_familiya"]))
+
+    return {"ok": True, "xabar": "Davom ettirildi. Vaqt qolgan joyidan hisoblanadi."}
+
+
 def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
     # xodim "Telefonni ko'tarmadi" tugmasini bosganda shu yerga tushadi.
     # 1-2 marta bosilganda — mijozga eslatma boradi, zayavka "qayta_aloqa" holatiga o'tadi (xodim BO'SHAYDI,
@@ -629,7 +706,10 @@ def zayavkani_qayta_qabul_qil(xodim, zayavka_id):
     if zayavka.get("biriktirilgan_xodim_id") != xodim["id"]:  # faqat avval mas'ul bo'lgan xodim qayta qabul qiladi
         return {"ok": False, "xabar": "Bu sizning mijozingiz emas."}
 
-    db.zayavkani_yangila(zayavka_id, holat="jarayonda", jarayon_boshlangan_vaqt=db.hozir().isoformat())
+    yangilanish = {"holat": "jarayonda", "jarayon_boshlangan_vaqt": db.hozir().isoformat()}
+    if zayavka.get("kutish_jami_soniya"):  # vaqt hisobi qayta noldan boshlanadi — eski kutilgan soniyalar aralashmasin
+        yangilanish["kutish_jami_soniya"] = 0
+    db.zayavkani_yangila(zayavka_id, **yangilanish)
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
 
     # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz

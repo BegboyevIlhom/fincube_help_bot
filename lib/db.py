@@ -278,6 +278,7 @@ def statistika():
         "bugun_jami_murojaat": (
             sonini_ol("navbatda", faqat_bugun=True)
             + sonini_ol("jarayonda", faqat_bugun=True)
+            + sonini_ol("kutish", faqat_bugun=True)  # kutish rejimidagilar ham hisoblanadi
             + sonini_ol("qayta_aloqa", faqat_bugun=True)  # javob bermay, qayta urinish kutayotganlar ham hisoblanadi
             + sonini_ol("tugallandi", faqat_bugun=True)
             + sonini_ol("javob_bermadi", faqat_bugun=True)  # butunlay javob bermay yopilganlar ham hisoblanadi
@@ -315,6 +316,15 @@ def qayta_aloqadagi_zayavkalar():
     return natija.data
 
 
+def kutishdagi_zayavkalar():
+    # "kutish rejimi"dagi zayavkalar: xodim mijoz bilan gaplashgan, lekin muammo hali hal bo'lmagan —
+    # xodim bo'sh, mijoz esa xodim "Davom ettirish"ni bosishini kutmoqda (eng uzoq kutayotgani birinchi)
+    natija = (_client.table("zayavkalar").select("*")
+              .eq("holat", "kutish")
+              .order("kutish_boshlangan_vaqt").execute())
+    return natija.data
+
+
 def bugungi_muddati_otganlar():
     # bugun 20 daqiqada ulgurilmay "qolib ketgan" mijozlar ro'yxatini qaytaradi (eng yangisi birinchi)
     natija = (_client.table("zayavkalar").select("*")
@@ -326,7 +336,7 @@ def bugungi_muddati_otganlar():
 
 def bugungi_tugallangan_yozuvlar():
     # bugun yakunlangan consultatsiyalarning xom ma'lumotini qaytaradi (analitika hisoblash uchun kerak)
-    natija = (_client.table("zayavkalar").select("id, biriktirilgan_xodim_id, jarayon_boshlangan_vaqt, tugallangan_vaqt")
+    natija = (_client.table("zayavkalar").select("*")
               .eq("holat", "tugallandi")
               .gte("yaratilgan_vaqt", kunlik_boshlanish_vaqti())
               .not_.is_("jarayon_boshlangan_vaqt", "null")  # boshlanish vaqti bo'lishi shart
@@ -335,12 +345,14 @@ def bugungi_tugallangan_yozuvlar():
     return natija.data
 
 
-def vaqt_farqi_daqiqada(boshlanish_matni, tugash_matni):
-    # ikkita vaqt matnini (Supabase'dan kelgan ISO format) solishtirib, orasidagi farqni daqiqada qaytaradi
+def vaqt_farqi_daqiqada(boshlanish_matni, tugash_matni, kutish_soniya=0):
+    # ikkita vaqt matnini (Supabase'dan kelgan ISO format) solishtirib, orasidagi farqni daqiqada qaytaradi.
+    # kutish_soniya — mijoz "kutish rejimi"da turgan jami soniyalar: bu vaqt gaplashish davomiyligiga QO'SHILMAYDI
     from datetime import datetime as _dt  # funksiya ichida import qilamiz
     boshlanish = _dt.fromisoformat(boshlanish_matni.replace("Z", "+00:00"))
     tugash = _dt.fromisoformat(tugash_matni.replace("Z", "+00:00"))
-    return round((tugash - boshlanish).total_seconds() / 60, 1)  # daqiqaga o'tkazib, 1 xona aniqlikda qaytaramiz
+    soniya = (tugash - boshlanish).total_seconds() - (kutish_soniya or 0)
+    return round(max(soniya, 0) / 60, 1)  # daqiqaga o'tkazib, 1 xona aniqlikda qaytaramiz
 
 
 def xodimlar_analitikasi():
@@ -353,7 +365,8 @@ def xodimlar_analitikasi():
     guruhlangan = {}  # xodim_id -> [daqiqalar ro'yxati]
     for yozuv in yozuvlar:
         xodim_id = yozuv["biriktirilgan_xodim_id"]
-        daqiqa = vaqt_farqi_daqiqada(yozuv["jarayon_boshlangan_vaqt"], yozuv["tugallangan_vaqt"])
+        daqiqa = vaqt_farqi_daqiqada(yozuv["jarayon_boshlangan_vaqt"], yozuv["tugallangan_vaqt"],
+                                     yozuv.get("kutish_jami_soniya"))
         guruhlangan.setdefault(xodim_id, []).append(daqiqa)  # shu xodimning ro'yxatiga qo'shamiz
 
     natija = []
@@ -375,8 +388,7 @@ def xodimning_mijozlari(xodim_id, boshlanish_vaqti, holat="tugallandi"):
     # (ism, telefon, INN, yozgan xabari/sababi, BAHOSI va IZOHI) — analitikada/oylik hisobotda
     # "xodim ustiga bosilganda" ko'rsatish uchun.
     # holat: "tugallandi" (consultatsiya berilgan) yoki "javob_bermadi" (mijoz javob bermagan)
-    zayavkalar = (_client.table("zayavkalar").select(
-        "id, mijoz_id, matn, jarayon_boshlangan_vaqt, tugallangan_vaqt, kompaniya_nomi, inn, qongiroq_soni")
+    zayavkalar = (_client.table("zayavkalar").select("*")
                   .eq("biriktirilgan_xodim_id", xodim_id)
                   .eq("holat", holat)
                   .gte("yaratilgan_vaqt", boshlanish_vaqti)
@@ -388,8 +400,7 @@ def xodimning_mijozlari(xodim_id, boshlanish_vaqti, holat="tugallandi"):
 def xodimning_qayta_aloqa_mijozlari(xodim_id, boshlanish_vaqti):
     # "qayta_aloqa" holatidagi mijozlar — telefon ko'tarilmagan, xodim "Qabul qilish"ni
     # yana bosishini kutmoqda (hali 3-martaga yetib, yopilmagan)
-    zayavkalar = (_client.table("zayavkalar").select(
-        "id, mijoz_id, matn, jarayon_boshlangan_vaqt, tugallangan_vaqt, kompaniya_nomi, inn, qongiroq_soni")
+    zayavkalar = (_client.table("zayavkalar").select("*")
                   .eq("biriktirilgan_xodim_id", xodim_id)
                   .eq("holat", "qayta_aloqa")
                   .gte("yaratilgan_vaqt", boshlanish_vaqti)
@@ -420,7 +431,8 @@ def _mijoz_royxatini_toldir(zayavkalar):
         baholash = baholash_map.get(z["id"])  # shu zayavkaga tegishli baholash (bo'lmasligi ham mumkin)
         daqiqa = None
         if z.get("jarayon_boshlangan_vaqt") and z.get("tugallangan_vaqt"):  # ikkalasi ham bo'lsa hisoblaymiz
-            daqiqa = vaqt_farqi_daqiqada(z["jarayon_boshlangan_vaqt"], z["tugallangan_vaqt"])
+            daqiqa = vaqt_farqi_daqiqada(z["jarayon_boshlangan_vaqt"], z["tugallangan_vaqt"],
+                                         z.get("kutish_jami_soniya"))
         natija.append({
             "mijoz_ismi": mijoz.get("ism") or "Noma'lum",
             "mijoz_telefon": mijoz.get("telefon"),
@@ -470,6 +482,10 @@ def app_panel_malumoti(rol):
     for z in jarayondagilar:  # har biriga kim gaplashayotganini (ismini) biriktiramiz
         z["xodim_ismi"] = ism_map.get(z.get("biriktirilgan_xodim_id"), "?")
 
+    kutishdagilar = kutishdagi_zayavkalar()  # "Kutish rejimi"ga qo'yilgan (muammosi hali hal bo'lmagan) mijozlar
+    for z in kutishdagilar:
+        z["xodim_ismi"] = ism_map.get(z.get("biriktirilgan_xodim_id"), "?")
+
     qayta_aloqadagilar = qayta_aloqadagi_zayavkalar()  # "Telefonni ko'tarmadi" bosilib, qayta urinish kutayotganlar
     for z in qayta_aloqadagilar:  # har biriga kim mas'ul ekanini (ismini) biriktiramiz
         z["xodim_ismi"] = ism_map.get(z.get("biriktirilgan_xodim_id"), "?")
@@ -477,13 +493,14 @@ def app_panel_malumoti(rol):
     # TEZLIK: bugungi barcha holatlar sonini BITTA so'rov bilan olamiz (oldin 6 ta alohida so'rov edi)
     bugun = bugungi_holat_sonlari()
     bugun_jami = sum(bugun.get(h, 0) for h in
-                      ("navbatda", "jarayonda", "qayta_aloqa", "tugallandi", "javob_bermadi", "muddati_otdi"))
+                      ("navbatda", "jarayonda", "kutish", "qayta_aloqa", "tugallandi", "javob_bermadi", "muddati_otdi"))
 
     natija = {
         # DIQQAT: "kompaniya_nomi" endi zayavkaning o'zida (select "*" orqali) tayyor keladi —
         # mijoz orqali alohida "join" qilishning hojati yo'q (avvalgi xato aynan shu joyda edi)
         "navbatdagilar": navbatdagi_zayavkalar(),  # 1) navbat kutayotganlar
         "jarayondagilar": jarayondagilar,  # 2) consultatsiya jarayonda
+        "kutishdagilar": kutishdagilar,  # 2.2) kutish rejimida (muammo hali hal bo'lmagan)
         "qayta_aloqadagilar": qayta_aloqadagilar,  # 2.5) mijoz javob bermay, qayta urinish kutilayotganlar
         "bugun_jami_murojaat": bugun_jami,  # 3) bugun jami murojaatlar
         "bugun_consultatsiya_berildi": bugun.get("tugallandi", 0),  # 4) bugun tugallanganlar
@@ -554,6 +571,36 @@ def zayavkani_atomik_qabul_qil(zayavka_id, xodim_id):
               .in_("holat", ["navbatda", "muddati_otdi"])
               .execute())
     return len(natija.data) > 0  # True — bu chindan ham BIRINCHI marta qabul qilindi
+
+
+def zayavkani_atomik_kutishga_qoy(zayavka_id, xodim_id):
+    # ATOMIK: faqat shu xodimga biriktirilgan va hozir "jarayonda" bo'lgan zayavkani "kutish" holatiga o'tkazadi
+    # va kutish boshlangan vaqtni yozadi (shu daqiqadan boshlab gaplashish vaqti HISOBLANMAYDI)
+    natija = (_client.table("zayavkalar")
+              .update({"holat": "kutish", "kutish_boshlangan_vaqt": hozir().isoformat()})
+              .eq("id", zayavka_id)
+              .eq("biriktirilgan_xodim_id", xodim_id)
+              .eq("holat", "jarayonda")
+              .execute())
+    return len(natija.data) > 0
+
+
+def zayavkani_atomik_kutishdan_qaytar(zayavka, xodim_id):
+    # ATOMIK: "kutish"dagi zayavkani yana "jarayonda"ga qaytaradi. Shu kutish davomida o'tgan soniyalar
+    # jami kutilgan vaqtga (kutish_jami_soniya) qo'shiladi — gaplashish davomiyligidan keyin ayirib tashlanadi.
+    # jarayon_boshlangan_vaqt O'ZGARTIRILMAYDI, shuning uchun vaqt qolgan joyidan davom etadi
+    from datetime import datetime as _dt
+    jami = zayavka.get("kutish_jami_soniya") or 0
+    if zayavka.get("kutish_boshlangan_vaqt"):
+        boshlangan = _dt.fromisoformat(zayavka["kutish_boshlangan_vaqt"].replace("Z", "+00:00"))
+        jami += max(0, int((hozir() - boshlangan).total_seconds()))
+    natija = (_client.table("zayavkalar")
+              .update({"holat": "jarayonda", "kutish_jami_soniya": jami, "kutish_boshlangan_vaqt": None})
+              .eq("id", zayavka["id"])
+              .eq("biriktirilgan_xodim_id", xodim_id)
+              .eq("holat", "kutish")
+              .execute())
+    return len(natija.data) > 0
 
 
 def zayavkani_atomik_tugat(zayavka_id, xodim_id):
@@ -702,7 +749,7 @@ def oylik_hisobot():
     boshlanish = oy_boshlanish_vaqti()
 
     # SHU OY ICHIDA TUGALLANGAN zayavkalar — gaplashish vaqtini va mijozlar sonini hisoblash uchun
-    zayavkalar = (_client.table("zayavkalar").select("biriktirilgan_xodim_id, jarayon_boshlangan_vaqt, tugallangan_vaqt")
+    zayavkalar = (_client.table("zayavkalar").select("*")
                   .eq("holat", "tugallandi")
                   .gte("tugallangan_vaqt", boshlanish)
                   .not_.is_("jarayon_boshlangan_vaqt", "null")
@@ -713,7 +760,8 @@ def oylik_hisobot():
     mijoz_soni = {}  # xodim_id -> nechta mijoz
     for z in zayavkalar:
         xodim_id = z["biriktirilgan_xodim_id"]
-        daqiqa = vaqt_farqi_daqiqada(z["jarayon_boshlangan_vaqt"], z["tugallangan_vaqt"])
+        daqiqa = vaqt_farqi_daqiqada(z["jarayon_boshlangan_vaqt"], z["tugallangan_vaqt"],
+                                     z.get("kutish_jami_soniya"))
         daqiqa_jami[xodim_id] = daqiqa_jami.get(xodim_id, 0) + daqiqa
         mijoz_soni[xodim_id] = mijoz_soni.get(xodim_id, 0) + 1
 
