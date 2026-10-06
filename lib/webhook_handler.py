@@ -111,6 +111,12 @@ RASMIY_QABUL_XABARI = (
 )
 
 
+# GURUH SIYOSATI: mijoz guruhida status xabari FAQAT BITTA va u faqat IKKI holatdan o'tadi:
+#   1) "Assalomu alaykum... xodimlarimiz siz bilan bog'lanadi"   (zayavka to'liq kelganda)
+#   2) "☑️ <xodim> consultatsiya berdi"                          (xodim yakunlaganda — xabar tahrirlanadi)
+# Boshqa har qanday holat (kim qabul qilgani, kutish rejimi, band/bo'sh, qayta aloqa, javob bermadi...) guruhda
+# ko'rinmaydi — ularni faqat owner/super_user Mini App'da ko'radi. Mijozga kerak xabarlar (masalan 20 daqiqadan
+# keyingi uzr, shartnoma yo'qligi) esa uning SHAXSIY chatiga (botga) yuboriladi
 def guruh_statusini_yangila(zayavka, status_matni):
     # guruhdagi rasmiy xabarni (mijozga yuborilgan) yangi status bilan TAHRIRLAYDI — yangi xabar yozmaydi.
     # Xabar topilmasa yoki Telegram tahrirga ruxsat bermasa, asosiy jarayon (qabul/yakunlash) to'xtamaydi
@@ -125,27 +131,11 @@ def guruh_statusini_yangila(zayavka, status_matni):
         print(f"Guruh statusini yangilashda xatolik: {xato}")
 
 
-def qabul_status_matni(xodim_ismi):
-    ism = html.escape(xodim_ismi)
-    return (
-        f"✅ Murojaatingizni <b>{ism}</b> qabul qildi. Tez orada siz bilan bog'lanadi.\n\n"
-        f"✅ Ваше обращение принял(а) <b>{ism}</b>. Скоро с вами свяжутся."
-    )
-
-
-def kutish_status_matni(xodim_ismi):
-    ism = html.escape(xodim_ismi)
-    return (
-        f"⏳ Murojaatingiz ustida ish davom etmoqda (<b>{ism}</b>). Natija bo'yicha siz bilan yana bog'lanamiz.\n\n"
-        f"⏳ Работа по вашему обращению продолжается (<b>{ism}</b>). Мы свяжемся с вами по результату."
-    )
-
-
 def yakun_status_matni(xodim_ismi):
     ism = html.escape(xodim_ismi)
     return (
-        f"☑️ Consultatsiya yakunlandi ({ism}). Rahmat!\n\n"
-        f"☑️ Консультация завершена ({ism}). Спасибо!"
+        f"☑️ <b>{ism}</b> consultatsiya berdi. Rahmat!\n\n"
+        f"☑️ <b>{ism}</b> провёл(а) консультацию. Спасибо!"
     )
 
 
@@ -499,8 +489,7 @@ def zayavkani_qabul_qil(xodim, zayavka_id):
     # xodimni "band" holatiga o'tkazamiz
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka["id"])
 
-    # guruhdagi rasmiy xabar statusini yangilaymiz: "... qabul qildi" (yangi xabar yozilmaydi, xabar tahrirlanadi)
-    guruh_statusini_yangila(zayavka, qabul_status_matni(xodim["ism_familiya"]))
+    # DIQQAT: guruhga hech narsa yozilmaydi va statusda kim qabul qilgani ko'rsatilmaydi — bu faqat Mini App'da ko'rinadi
 
     return {"ok": True, "xabar": "Qabul qilindi, omad!"}
 
@@ -580,8 +569,7 @@ def zayavkani_kutishga_qoy(xodim, zayavka_id):
     # xodim BO'SHAYDI — boshqa mijozni qabul qila oladi
     db.xodim_holatini_yangila(xodim["id"], "bosh", None)
 
-    # guruhdagi rasmiy xabar statusi: "Murojaatingiz ustida ish davom etmoqda"
-    guruh_statusini_yangila(zayavka, kutish_status_matni(xodim["ism_familiya"]))
+    # DIQQAT: guruhdagi status O'ZGARMAYDI ("... qabul qildi" bo'lib turaveradi) — kutish rejimi faqat Mini App'da ko'rinadi
 
     # xodim bo'shagani uchun, navbatda mijoz kutayotgan bo'lsa — shu xodimga eslatma yuboramiz
     if db.keyingi_navbatdagi_zayavka():
@@ -611,8 +599,7 @@ def zayavkani_kutishdan_davom_ettir(xodim, zayavka_id):
 
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
 
-    # guruhdagi rasmiy xabar statusini yana "... qabul qildi" ga qaytaramiz
-    guruh_statusini_yangila(zayavka, qabul_status_matni(xodim["ism_familiya"]))
+    # DIQQAT: guruhga hech narsa yozilmaydi — status allaqachon "... qabul qildi" turibdi
 
     return {"ok": True, "xabar": "Davom ettirildi. Vaqt qolgan joyidan hisoblanadi."}
 

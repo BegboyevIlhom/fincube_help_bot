@@ -64,18 +64,27 @@ def majburiy_signal_yubor(zayavka):
 
 
 def muddat_tugadi(zayavka):
-    # 20 daqiqa to'liq o'tib, hech kim qabul qilmagan bo'lsa — mijozga uzr aytamiz (ikki tilda)
-    tg.xabar_yubor(
-        zayavka["guruh_chat_id"],
-        "🇺🇿 Hurmatli mijoz, uzr so'raymiz — hozirda barcha mutaxassislarimiz band. "
-        "Tez orada siz bilan albatta bog'lanamiz. Kutganingiz uchun rahmat!\n\n"
-        "🇷🇺 Уважаемый клиент, приносим извинения — в данный момент все наши специалисты заняты. "
-        "Мы обязательно свяжемся с вами в ближайшее время. Спасибо за ожидание!",
-        reply_to=zayavka.get("mijoz_xabar_id")
-    )
-    # zayavkani "muddati_otdi" holatiga o'tkazamiz, shunda u endi navbatda hisoblanmaydi
-    db.zayavkani_yangila(zayavka["id"], holat="muddati_otdi")
-    return {"zayavka_id": zayavka["id"], "harakat": "uzr_yuborildi"}
+    # 20 daqiqa to'liq o'tib, hech kim qabul qilmagan bo'lsa — zayavka "muddati_otdi" holatiga o'tadi va
+    # mijozga uzr xabari SHAXSIY chatiga (botga) yuboriladi. Guruhga hech narsa yozilmaydi.
+    # Zayavka Mini App'dagi "20 daqiqada o'tib ketgan mijozlar" bo'limiga tushadi — xodim hali ham qabul qila oladi
+    from lib.webhook_handler import shaxsiy_yoki_ogohlantirish_yubor  # funksiya ichida import — davra (circular) bo'lmasligi uchun
+
+    # ATOMIK o'tkazish: cron ikki marta bir vaqtda ishlasa ham, uzr FAQAT BIR MARTA yuboriladi
+    if not db.zayavkani_shartli_yangila(zayavka["id"], ["navbatda"], holat="muddati_otdi"):
+        return {"zayavka_id": zayavka["id"], "harakat": "allaqachon_belgilangan"}
+
+    mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
+    if mijoz:
+        matn = (
+            "🇺🇿 Hurmatli mijoz, uzr so'raymiz — hozirda barcha xodimlarimiz band edi. "
+            "Tez orada siz bilan albatta bog'lanamiz. Kutganingiz uchun rahmat!\n\n"
+            "🇷🇺 Уважаемый клиент, приносим извинения — в данный момент все наши сотрудники были заняты. "
+            "Мы обязательно свяжемся с вами в ближайшее время. Спасибо за ожидание!"
+        )
+        # AVVAL mijozning shaxsiy chatiga urinadi; mijoz botni hali "start" qilmagan bo'lsa, xabar saqlab qo'yiladi
+        # va guruhga faqat mazmunsiz qisqa "Botni ochish" tugmasi chiqadi (start bosilganda xabar yetkaziladi)
+        shaxsiy_yoki_ogohlantirish_yubor(mijoz, zayavka["guruh_chat_id"], zayavka.get("mijoz_xabar_id"), matn)
+    return {"zayavka_id": zayavka["id"], "harakat": "uzr_shaxsiyga_yuborildi"}
 
 
 def db_vaqtdan_datetime(qiymat):
