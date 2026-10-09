@@ -2,6 +2,7 @@
 # Bu oddiy Python funksiyalari to'plami — FastAPI'ning o'zi bu yerda yo'q,
 # uni faqat api/index.py chaqiradi (shu tarzda Vercel'ning yangi talabiga moslashadi)
 
+import time  # xabar qancha vaqt oldin yozilganini hisoblash uchun
 import html  # kompaniya nomi kabi matnlarni Telegram HTML xabariga xavfsiz qo'yish uchun
 from lib import db  # ma'lumotlar bazasi funksiyalari
 from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
@@ -49,28 +50,8 @@ async def xabarni_qayta_ishla(xabar):
     if not matn:  # agar xabarda matn bo'lmasa (masalan rasm yoki stiker bo'lsa)
         return  # hozircha bunday xabarlarni e'tiborsiz qoldiramiz
 
-    # MUHIM: agar mijoz shunchaki biror ODAMGA (masalan xodimga, skrinshot yoki tushunarsiz joyni
-    # so'rab) TO'G'RIDAN-TO'G'RI javob (reply) yozayotgan bo'lsa — bu YANGI support so'rovi emas,
-    # oddiy suhbat. Botni bunga aralashtirmaymiz. FARQ: agar bu BOTNING O'ZINING xabariga
-    # (masalan "INN va telefon raqamingizni yuboring" degan so'rovimizga) javob bo'lsa — bu odatiy,
-    # kutilgan holat, shuning uchun bunday holatda jarayonni davom ettiramiz
-    javob_berilgan_xabar = xabar.get("reply_to_message")
-    if javob_berilgan_xabar and not javob_berilgan_xabar.get("from", {}).get("is_bot"):
-        print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
-        return
-
-    # xuddi shunday: agar xabarda kimnidir @ bilan belgilab chaqirish (mention) bo'lsa — bu ham
-    # to'g'ridan-to'g'ri kimgadir qaratilgan xabar, umumiy support so'rovi emas
-    mentionlar_bormi = any(e.get("type") in ("mention", "text_mention") for e in xabar.get("entities", []))
-    if mentionlar_bormi:
-        print("E'TIBORSIZ QOLDIRILDI: xabarda @belgilash (mention) bor")
-        return
-
-    # agar xabarni xodimlardan biri yozgan bo'lsa — bu mijoz murojaati emas, shuning uchun e'tiborsiz qoldiramiz
-    aniqlangan_xodim = db.xodim_topilsin(yuboruvchi_id)
-    if aniqlangan_xodim:
-        print(f"E'TIBORSIZ QOLDIRILDI: yuboruvchi ({yuboruvchi_id}) xodim sifatida aniqlandi "
-              f"({aniqlangan_xodim.get('ism_familiya')})")
+    # odamga reply, @belgilash yoki xodim yozgan xabarlar mijoz murojaati emas — e'tiborsiz qoldiramiz
+    if not mijoz_xabarimi(xabar):
         return
 
     # mijozni bazadan topamiz yoki yangisini yaratamiz
@@ -91,6 +72,38 @@ async def xabarni_qayta_ishla(xabar):
 
     # endi INN/telefonni va shartnomani tekshirib, zayavkani kerakli holatga o'tkazamiz
     zayavkani_tekshir(zayavka, mijoz, xabar, chat_id)
+
+
+def mijoz_xabarimi(xabar):
+    # xabar oddiy mijoz murojaati (support so'rovi) bo'lishi mumkinmi? Yangi xabar ham, TAHRIRLANGAN xabar ham
+    # shu bir xil qoidalar bilan tekshiriladi. Rad etilsa, sababi logga yoziladi
+
+    # MUHIM: agar mijoz shunchaki biror ODAMGA (masalan xodimga, skrinshot yoki tushunarsiz joyni
+    # so'rab) TO'G'RIDAN-TO'G'RI javob (reply) yozayotgan bo'lsa — bu YANGI support so'rovi emas,
+    # oddiy suhbat. Botni bunga aralashtirmaymiz. FARQ: agar bu BOTNING O'ZINING xabariga
+    # (masalan "INN va telefon raqamingizni yuboring" degan so'rovimizga) javob bo'lsa — bu odatiy,
+    # kutilgan holat, shuning uchun bunday holatda jarayonni davom ettiramiz
+    javob_berilgan_xabar = xabar.get("reply_to_message")
+    if javob_berilgan_xabar and not javob_berilgan_xabar.get("from", {}).get("is_bot"):
+        print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
+        return False
+
+    # xuddi shunday: agar xabarda kimnidir @ bilan belgilab chaqirish (mention) bo'lsa — bu ham
+    # to'g'ridan-to'g'ri kimgadir qaratilgan xabar, umumiy support so'rovi emas
+    mentionlar_bormi = any(e.get("type") in ("mention", "text_mention") for e in xabar.get("entities", []))
+    if mentionlar_bormi:
+        print("E'TIBORSIZ QOLDIRILDI: xabarda @belgilash (mention) bor")
+        return False
+
+    # agar xabarni xodimlardan biri yozgan bo'lsa — bu mijoz murojaati emas, shuning uchun e'tiborsiz qoldiramiz
+    yuboruvchi_id = xabar.get("from", {}).get("id")
+    aniqlangan_xodim = db.xodim_topilsin(yuboruvchi_id)
+    if aniqlangan_xodim:
+        print(f"E'TIBORSIZ QOLDIRILDI: yuboruvchi ({yuboruvchi_id}) xodim sifatida aniqlandi "
+              f"({aniqlangan_xodim.get('ism_familiya')})")
+        return False
+
+    return True
 
 
 def zayavkaning_xabarlari(zayavka):
@@ -240,22 +253,57 @@ def navbat_haqida_xodimga_bildir(xodim):
     )
 
 
+def tahrirni_yangi_murojaat_qil(xabar, mijoz, chat_id, matn):
+    # Tahrirlangan xabar mijozning hech bir zayavkasida topilmadi (masalan mijozning eski ochiq zayavkasi bor,
+    # yoki xabar boshida e'tiborsiz qoldirilgan edi). Agar tahrirdan keyin xabarning O'ZIDA INN va telefon
+    # to'liq bo'lsa — uni yangi murojaat sifatida qabul qilamiz. Aks holda mijoz tuzatib yuborganiga
+    # qaramay, bot indamay turib qolardi
+    sana = xabar.get("date")  # xabar dastlab qachon yozilgani (unix vaqti)
+    if sana and time.time() - sana > 2 * 3600:  # eski xabar tahriri (2 soatdan oshgan) — yangi murojaat emas
+        print("Tahrirlangan xabar 2 soatdan eski — e'tiborsiz qoldirildi")
+        return
+    toliqmi, _ = malumot_toliqmi(matn)
+    if not toliqmi:  # tahrirdan keyin ham INN/telefon to'liq emas — kutamiz
+        print("Tahrirlangan xabar topilmadi va ma'lumot to'liq emas — e'tiborsiz qoldirildi")
+        return
+
+    xabar_id = xabar.get("message_id")
+    xabarlar = [{"id": xabar_id, "t": matn}]
+    zayavka = db.ochiq_zayavka_top(mijoz["id"])
+    if zayavka:
+        # mijozning ESKI ochiq zayavkasi bor — undagi eskirgan matn yangi murojaatga aralashmasligi uchun
+        # uni shu xabarning o'zi bilan ALMASHTIRAMIZ. mijoz_xabar_id'ni ham yangilaymiz — shunda keyingi
+        # tahrirlar shu zayavkani to'g'ri topadi (takroriy zayavka ochilib ketmaydi)
+        db.zayavka_matnini_yangila(zayavka["id"], matn, xabarlar)
+        db.zayavkani_yangila(zayavka["id"], mijoz_xabar_id=xabar_id)
+        zayavka["matn"], zayavka["xabarlar"] = matn, xabarlar
+    else:
+        zayavka = db.zayavka_yarat(mijoz["id"], chat_id, xabar_id, matn)
+    print(f"Tahrirlangan xabar ({xabar_id}) yangi murojaat sifatida qabul qilindi (zayavka {zayavka['id']})")
+    zayavkani_tekshir(zayavka, mijoz, xabar, chat_id)
+
+
 async def tahrirlangan_xabarni_qayta_ishla(xabar):
     # mijoz guruhdagi o'zining OLDINGI xabarini tahrirlaganda shu yerga tushadi (masalan INN yoki
-    # telefon raqamidagi xatoni to'g'irlagan bo'lsa). Yangi xabar yozmasdan tuzatganini ham qabul qilamiz
+    # telefon raqamidagi xatoni to'g'irlagan yoki unutgan ma'lumotini qo'shgan bo'lsa).
+    # Yangi xabar yozmasdan tuzatganini ham qabul qilamiz
     chat = xabar.get("chat", {})
     chat_id = chat.get("id")
     if chat.get("type") == "private" or chat_id not in SUPPORT_GROUP_IDLAR:
         return  # faqat bizning support guruh(lar)imizdagi tahrirlar ahamiyatli
 
     yangi_matn_xabari = xabar.get("text", "")
+    print(f"Tahrirlangan guruh xabari: chat_id={chat_id}, xabar_id={xabar.get('message_id')}, matn={yangi_matn_xabari!r}")
     if not yangi_matn_xabari:  # matnsiz (masalan rasm izohi) tahrirlarni e'tiborsiz qoldiramiz
         return
 
+    # yangi xabardagi bir xil filtrlar: odamga reply, @belgilash, xodim yozgan
+    if not mijoz_xabarimi(xabar):
+        return
+
     xabar_id = xabar.get("message_id")
-    mijoz = db.mijoz_topilsin(xabar.get("from", {}).get("id"))  # faqat qidiramiz, yangi mijoz yaratmaymiz
-    if not mijoz:
-        return  # bu odam bizda mijoz sifatida yo'q (masalan xodim yoki begona) — e'tiborsiz
+    yuboruvchi = xabar.get("from", {})
+    mijoz = db.mijoz_top_yoki_yarat(yuboruvchi.get("id"), yuboruvchi.get("first_name", "Mijoz"))
 
     # tahrirlangan xabar mijozning qaysi zayavkasiga tegishli ekanini topamiz
     zayavka = None
@@ -266,7 +314,8 @@ async def tahrirlangan_xabarni_qayta_ishla(xabar):
             zayavka = z
             break
     if not zayavka:
-        print(f"Tahrirlangan xabar ({xabar_id}) hech bir zayavkaga tegishli emas — e'tiborsiz qoldirildi")
+        # hech bir zayavkada topilmadi — tahrirdan keyin ma'lumot to'liq bo'lsa, yangi murojaat sifatida qabul qilamiz
+        tahrirni_yangi_murojaat_qil(xabar, mijoz, chat_id, yangi_matn_xabari)
         return
 
     holat = zayavka.get("holat")
