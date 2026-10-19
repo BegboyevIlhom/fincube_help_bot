@@ -436,9 +436,9 @@ def shaxsiy_chatni_boshqar(xabar):
     tg.xabar_yubor(
         chat_id,
         "🇺🇿 Salom! Savolingiz yoki murojaatingiz bo'lsa, iltimos FINCUBE support guruhiga yozing:\n"
-        "https://t.me/+W2fmayb2qeMxZjJi\n\n"
+        "https://t.me/fincube_its\n\n"
         "🇷🇺 Здравствуйте! Если у вас есть вопрос, пожалуйста, напишите в группу поддержки FINCUBE:\n"
-        "https://t.me/+W2fmayb2qeMxZjJi"
+        "https://t.me/fincube_its"
     )
 
 

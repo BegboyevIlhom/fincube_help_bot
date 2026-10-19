@@ -9,6 +9,13 @@
 # marta to'liq ma'lumot (INN+telefon) bilan murojaat qilganda yangi Deal yaratiladi, keyingi
 # barcha murojaatlari (va holat o'zgarishlari) O'SHA Deal'ning bosqichi va tarixiga (timeline)
 # yoziladi, har safar yangi Deal yaratilmaydi.
+#
+# IKKI QATLAMLI HIMOYA takroriy Deal yaratilib ketmasligi uchun:
+#   1) mijoz['bitrix_deal_id'] — bazada saqlangan, eng tezkor yo'l
+#   2) agar (1) bazaga biror sabab bilan yozilmagan bo'lsa (masalan ustun hali qo'shilmagan,
+#      yoki vaqtinchalik xatolik bo'lgan), Bitrix'ning O'ZIDAN shu Kontaktga tegishli
+#      eski Deal bormi qidiriladi — shu orqali baza "unutib qo'ysa" ham, Bitrix'da
+#      bitta mijoz uchun bir nechta Deal ko'payib ketmaydi
 
 import requests  # Bitrix REST API'ga HTTP so'rov yuborish uchun
 from lib import db  # mijozga Bitrix ID'larini saqlash uchun
@@ -57,11 +64,22 @@ def _kontakt_top_yoki_yarat(ism, telefon):
     })
 
 
-def _deal_yarat(ism, telefon, inn, bosqich_kodi, izoh):
-    # Yangi Deal (murojaat) yaratadi. Muvaffaqiyatli bo'lsa (deal_id, contact_id) qaytaradi,
-    # muvaffaqiyatsiz bo'lsa (None, None)
-    contact_id = _kontakt_top_yoki_yarat(ism, telefon)
+def _deal_top(contact_id):
+    # XAVFSIZLIK TO'RI: bazada bitrix_deal_id saqlanmagan/yo'qolgan bo'lsa ham, shu Kontaktga
+    # tegishli ESKI Deal Bitrix'ning o'zida bormi tekshiradi — shunday qilib, baza yozuvi
+    # muvaffaqiyatsiz bo'lsa ham, bitta mijoz uchun bir nechta Deal yaratilib ketmaydi
+    if not contact_id:
+        return None
+    topilganlar = _sorov("crm.deal.list", {
+        "filter": {"CONTACT_ID": contact_id, "CATEGORY_ID": BITRIX_CATEGORY_ID},
+        "select": ["ID"],
+        "order": {"ID": "DESC"}
+    })
+    return topilganlar[0]["ID"] if topilganlar else None
 
+
+def _deal_yarat(contact_id, ism, telefon, inn, bosqich_kodi, izoh):
+    # Yangi Deal (murojaat) yaratadi. Muvaffaqiyatli bo'lsa deal_id qaytaradi, aks holda None
     maydonlar = {
         "TITLE": f"Support: {ism or 'Mijoz'} ({telefon or '—'})",
         "CATEGORY_ID": BITRIX_CATEGORY_ID,
@@ -73,8 +91,7 @@ def _deal_yarat(ism, telefon, inn, bosqich_kodi, izoh):
     if inn and BITRIX_FIELD_INN:
         maydonlar[BITRIX_FIELD_INN] = inn
 
-    deal_id = _sorov("crm.deal.add", {"fields": maydonlar})
-    return deal_id, contact_id
+    return _sorov("crm.deal.add", {"fields": maydonlar})
 
 
 def _deal_bosqichini_yangila(deal_id, bosqich_kodi, mas_ul_bitrix_user_id=None):
@@ -98,6 +115,22 @@ def _deal_ga_izoh_qosh(deal_id, matn):
     })
 
 
+def _mijozga_saqla(mijoz, contact_id, deal_id):
+    # bitrix ID'larini bazaga yozadi. Bu yozuv MUVAFFAQIYATSIZ bo'lsa ham (masalan ustun hali
+    # qo'shilmagan bo'lsa), Deal o'zi allaqachon yaratilgan/yangilangan bo'ladi — shuning uchun
+    # bu yerdagi xatolik alohida ushlanadi va faqat ogohlantirish sifatida logga yoziladi
+    try:
+        db.mijoz_bitrix_malumotini_yangila(mijoz["id"], bitrix_contact_id=contact_id, bitrix_deal_id=deal_id)
+        mijoz["bitrix_deal_id"] = deal_id
+        mijoz["bitrix_contact_id"] = contact_id
+    except Exception as xato:
+        print(
+            f"OGOHLANTIRISH: Bitrix ID'lari bazaga yozilmadi (mijoz_id={mijoz.get('id')}): {xato}. "
+            f"Supabase'da 'mijozlar' jadvalida 'bitrix_contact_id' va 'bitrix_deal_id' "
+            f"ustunlari borligini tekshiring."
+        )
+
+
 def zayavkani_sinxronla(mijoz, zayavka, holat_nomi, mas_ul_bitrix_user_id=None, izoh=None):
     # ASOSIY funksiya — webhook_handler.py va timer_handler.py shu yerdan foydalanadi.
     # mijoz uchun Bitrix Deal'ni yaratadi (agar hali yo'q bo'lsa) yoki mavjudini
@@ -107,25 +140,31 @@ def zayavkani_sinxronla(mijoz, zayavka, holat_nomi, mas_ul_bitrix_user_id=None, 
         return
 
     try:
-        mavjud_deal_id = mijoz.get("bitrix_deal_id")
+        deal_id = mijoz.get("bitrix_deal_id")
+        contact_id = mijoz.get("bitrix_contact_id")
 
-        if mavjud_deal_id:  # mijozning Bitrix'da allaqachon Deal'i bor — o'shani yangilaymiz
-            _deal_bosqichini_yangila(mavjud_deal_id, bosqich_kodi, mas_ul_bitrix_user_id)
+        if not deal_id:
+            # bazada saqlangan Deal yo'q — avval Kontaktni topamiz/yaratamiz
+            if not contact_id:
+                contact_id = _kontakt_top_yoki_yarat(mijoz.get("ism"), mijoz.get("telefon"))
+            # SO'NG, yangi Deal yaratishdan OLDIN, shu Kontaktga tegishli ESKI Deal
+            # Bitrix'ning o'zida bormi tekshiramiz (baza "unutgan" bo'lsa ham himoya)
+            deal_id = _deal_top(contact_id)
+
+        if deal_id:  # mavjud Deal topildi (bazadan yoki Bitrix'dan) — shuni yangilaymiz
+            _deal_bosqichini_yangila(deal_id, bosqich_kodi, mas_ul_bitrix_user_id)
             if izoh:
-                _deal_ga_izoh_qosh(mavjud_deal_id, izoh)
-            return
-
-        # mijozning hali Deal'i yo'q — yangisini yaratamiz
-        inn = zayavka.get("inn") or mijoz.get("inn")
-        telefon = mijoz.get("telefon")
-        ism = mijoz.get("ism")
-        deal_id, contact_id = _deal_yarat(ism, telefon, inn, bosqich_kodi, izoh or zayavka.get("matn") or "")
-
-        if deal_id:  # muvaffaqiyatli yaratilsa, mijozga saqlab qo'yamiz (keyingi safar shuni ishlatish uchun)
-            db.mijoz_bitrix_malumotini_yangila(mijoz["id"], bitrix_contact_id=contact_id, bitrix_deal_id=deal_id)
-            mijoz["bitrix_deal_id"] = deal_id  # mahalliy nusxani ham yangilaymiz
-            if mas_ul_bitrix_user_id:  # agar yaratish paytidayoq mas'ul xodim ma'lum bo'lsa (kamdan-kam holat)
+                _deal_ga_izoh_qosh(deal_id, izoh)
+        else:  # chindan ham birinchi marta — yangi Deal yaratamiz
+            inn = zayavka.get("inn") or mijoz.get("inn")
+            telefon = mijoz.get("telefon")
+            ism = mijoz.get("ism")
+            deal_id = _deal_yarat(contact_id, ism, telefon, inn, bosqich_kodi, izoh or zayavka.get("matn") or "")
+            if deal_id and mas_ul_bitrix_user_id:  # kamdan-kam holat (yaratish paytidayoq mas'ul ma'lum bo'lsa)
                 _deal_bosqichini_yangila(deal_id, bosqich_kodi, mas_ul_bitrix_user_id)
+
+        if deal_id:  # topilgan/yaratilgan deal_id'ni har doim bazaga qayta saqlashga urinamiz
+            _mijozga_saqla(mijoz, contact_id, deal_id)
     except Exception as xato:
         # BITRIX BILAN BOG'LIQ HECH QANDAY XATOLIK BOTNI TO'XTATMASLIGI SHART
         print(f"BITRIX SINXRONLASH XATOSI (mijoz_id={mijoz.get('id')}, holat={holat_nomi}): {xato}")

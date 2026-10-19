@@ -1,63 +1,61 @@
-# Bu ZIP'da nima o'zgardi
+# Bu ZIP'da nima o'zgardi (2-versiya)
 
-## 1. Bitrix24 CRM integratsiyasi (YANGI)
-- **`lib/bitrix.py`** — yangi fayl. Har bir mijoz uchun Bitrix'da bitta Deal ochadi/yangilaydi.
-  Bitrix ishlamay qolsa ham (xato, sinov muddati tugashi va h.k.) bot hech qachon to'xtamaydi.
-- **`lib/config.py`** — oxiriga Bitrix sozlamalari qo'shildi (`BITRIX_WEBHOOK_URL`,
-  `BITRIX_CATEGORY_ID`, `BITRIX_FIELD_INN`, `BITRIX_BOSQICHLAR`).
-- **`lib/db.py`** — oxiriga `mijoz_bitrix_malumotini_yangila()` funksiyasi qo'shildi.
-- **`lib/webhook_handler.py`** — 8 joyga Bitrix sinxronlash chaqiruvi qo'shildi: navbatda,
-  shartnoma yo'q, qabul qilindi, yakunlandi, qayta aloqa, javob bermadi, qayta qabul qilindi,
-  kutishdan davom ettirildi.
-- **`lib/timer_handler.py`** — 20 daqiqada muddati o'tgan zayavka uchun ham Bitrix yangilanadi.
-- **`schema.sql`** — oxiriga yangi ustunlar qo'shildi (quyida, Supabase'da ishga tushirish kerak).
+## 1. Bitrix'da bitta mijoz uchun bir nechta Deal yaratilib ketishi — TUZATILDI
+**Sabab:** `mijozlar` jadvalida `bitrix_contact_id`/`bitrix_deal_id` ustunlari yo'q edi
+(yoki baza yozuvi boshqa sababdan muvaffaqiyatsiz bo'lgan), shuning uchun bot har safar
+"bu mijozning Deal'i hali yo'q" deb o'ylab, yangisini yarataverardi.
 
-**Diqqat:** "Kutish rejimi" (`holat = "kutish"`) uchun Bitrix bosqichi hali yaratilmagan
-(Bitrix'da shunday bosqich yo'q edi), shuning uchun bu holatda Bitrix sinxronlanmaydi —
-xato bermaydi, shunchaki hech narsa qilmaydi. Kerak bo'lsa, keyin alohida bosqich qo'shib,
-`BITRIX_STAGE_KUTISH` kabi yangi o'zgaruvchi qo'shish mumkin.
+**Tuzatish — ikki qatlamli himoya (`lib/bitrix.py`):**
+1. Avvalgidek, bazada saqlangan `bitrix_deal_id` bo'lsa, o'shani ishlatadi.
+2. **YANGI:** agar bazada yo'q bo'lsa, yangi Deal yaratishdan OLDIN, Bitrix'ning
+   o'zidan shu mijozning (Kontaktning) ESKI Deal'i bormi qidiradi. Topilsa, o'shani
+   ishlatadi — hatto baza yozuvi ishlamagan bo'lsa ham, endi takroriy Deal yaratilmaydi.
+3. Baza yozuvi muvaffaqiyatsiz bo'lsa, endi aniq ogohlantirish logga yoziladi:
+   `"OGOHLANTIRISH: Bitrix ID'lari bazaga yozilmadi ..."`
 
-## 2. "1С" xatosi tuzatildi
-- **`lib/logic.py`** — to'liq qayta yozildi. Oldin "тел 993808010 1С" kabi xabarda "1"
-  raqami telefon raqamiga yopishib, uni 10 xonali (xato) qilib ko'rsatar edi. Endi harf
-  aralashgan so'z ("1С" kabi) hech qanday raqamga ulanmaydi.
-
-## Supabase'da ishga tushirish kerak bo'lgan SQL
+**SHART:** quyidagi SQL Supabase'da ishga tushirilishi KERAK (agar hali qilinmagan bo'lsa):
 ```sql
 alter table mijozlar add column if not exists bitrix_contact_id bigint;
 alter table mijozlar add column if not exists bitrix_deal_id bigint;
-alter table xodimlar add column if not exists bitrix_user_id bigint;  -- (allaqachon qo'shgan bo'lishingiz mumkin)
 
 NOTIFY pgrst, 'reload schema';
 ```
+Buni ishga tushirmasangiz ham bot endi takroriy Deal yaratmaydi (yangi himoya tufayli),
+lekin har safar Bitrix'ga qo'shimcha so'rov yuborishga majbur bo'ladi (sal sekinroq) va
+mas'ul xodim/bosqich tarixi kamroq ishonchli bo'ladi. **SQL'ni ishga tushirish tavsiya qilinadi.**
 
-## Vercel'ga qo'shiladigan Environment Variable'lar
-`BITRIX_WEBHOOK_URL` allaqachon saqlangan bo'lsa, faqat quyidagilarni qo'shing:
+## 2. Guruh havolasi — TUZATILDI
+`lib/webhook_handler.py` da eski (`https://t.me/+W2fmayb2qeMxZjJi`) havola bot mijozga
+botning shaxsiy chatida "support guruhiga yozing" deganda ishlatilar edi. Endi
+`https://t.me/fincube_its` ga almashtirildi.
 
-| Nomi | Qiymati |
-|---|---|
-| `BITRIX_CATEGORY_ID` | `4` |
-| `BITRIX_FIELD_INN` | `UF_CRM_INN` |
-| `BITRIX_STAGE_NAVBATDA` | `C4:NEW` |
-| `BITRIX_STAGE_JARAYONDA` | `C4:PREPARATION` |
-| `BITRIX_STAGE_QAYTA_ALOQA` | `C4:PREPAYMENT_INVOICE` |
-| `BITRIX_STAGE_SHARTNOMA_YOQ` | `C4:EXECUTING` |
-| `BITRIX_STAGE_TUGALLANDI` | `C4:WON` |
-| `BITRIX_STAGE_JAVOB_BERMADI` | `C4:LOSE` |
-| `BITRIX_STAGE_MUDDATI_OTDI` | `C4:APOLOGY` |
+## 3. "edited_message" (tahrirlangan xabar) — KOD TOMONDAN TAYYOR, lekin Telegram
+sozlamasini QO'LDA tekshirish kerak
+Ilgari bu muammo bir marta tuzatilgan edi, lekin Bitrix Contact Center bilan sarguzashtlar
+paytida webhook qayta o'rnatilganda bu sozlama qayta eskiga qaytib ketgan bo'lishi mumkin.
+Quyidagini brauzerda oching (TOKEN — `fincube_help_bot` tokeni):
+```
+https://api.telegram.org/botTOKEN/setWebhook?url=https://fincube-help-bot.vercel.app/api/webhook&allowed_updates=["message","edited_message","callback_query"]
+```
+So'ng tekshiring:
+```
+https://api.telegram.org/botTOKEN/getWebhookInfo
+```
+`allowed_updates` ichida `edited_message` ham ko'rinishi SHART. Bu bo'lmasa, mijoz avvalgi
+xabarini tahrirlab INN/telefon qo'shsa, bot buni ko'rmay qoladi.
 
 ## Qilish tartibi
-1. Supabase'da yuqoridagi SQL'ni ishga tushiring.
-2. Vercel'da yangi Environment Variable'larni qo'shing.
-3. Shu ZIP ichidagi `fincube_help_bot-main` papkasini (yoki undagi o'zgargan fayllarni:
-   `lib/bitrix.py`, `lib/config.py`, `lib/db.py`, `lib/logic.py`, `lib/webhook_handler.py`,
-   `lib/timer_handler.py`, `schema.sql`) GitHub repo'ga qo'ying/almashtiring, commit va push qiling.
-4. Vercel avtomatik qayta deploy qiladi (yoki qo'lda "Redeploy" bosing).
-5. Guruhga INN+telefon bilan sinov xabari yuboring — Bitrix'dagi **Support** varonkasida
-   yangi Deal paydo bo'lishini tekshiring.
-6. "1С" so'zi bilan sinov xabari yuboring (masalan: "ИНН 304462751 тел 901234567 1С да muammo
-   bor") — endi to'g'ri qabul qilinishi kerak.
+1. **Supabase**: yuqoridagi (1-bo'lim) SQL'ni ishga tushiring.
+2. **Vercel**: shu ZIP'dagi `lib/bitrix.py` va `lib/webhook_handler.py` fayllarini
+   GitHub repo'ga qo'yib, commit/push qiling (deploy avtomatik ishga tushadi).
+3. **Telegram**: yuqoridagi (3-bo'lim) `setWebhook` havolasini oching.
+4. **Sinov**: yangi (hali murojaat qilmagan) raqamdan guruhga INN+telefon bilan xabar
+   yuboring, bot javob berganini va Bitrix'da BITTA Deal paydo bo'lganini tekshiring.
+   Keyin SHU raqamdan yana bir marta murojaat yuboring — Bitrix'da YANGI Deal EMAS,
+   ESKISIGA izoh qo'shilganini tekshiring.
 
 ## Tegilmagan fayllar
 `lib/mini_app_html.py`, `lib/dashboard_html.py`, `lib/telegram.py`, `lib/telegram_auth.py`,
-`lib/sheets.py`, `api/index.py`, `pyproject.toml`, `vercel.json`, `README.md` — o'zgarishsiz.
+`lib/sheets.py`, `lib/logic.py`, `lib/config.py`, `lib/db.py`, `lib/timer_handler.py`,
+`api/index.py`, `schema.sql`, `pyproject.toml`, `vercel.json`, `README.md` — bu safar
+o'zgarishsiz (ular o'tgan safar allaqachon tuzatilgan edi).
