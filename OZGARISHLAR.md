@@ -59,3 +59,10 @@ xabarini tahrirlab INN/telefon qo'shsa, bot buni ko'rmay qoladi.
 `lib/sheets.py`, `lib/logic.py`, `lib/config.py`, `lib/db.py`, `lib/timer_handler.py`,
 `api/index.py`, `schema.sql`, `pyproject.toml`, `vercel.json`, `README.md` — bu safar
 o'zgarishsiz (ular o'tgan safar allaqachon tuzatilgan edi).
+
+## 4. (v3) Yakuniy tekshiruv — bitta qo'shimcha tuzatish
+`lib/webhook_handler.py`ning `shartnoma_yoq` filialida Bitrix sinxronlash endi faqat
+bazaviy (shartli/atomik) yozuv chindan muvaffaqiyatli bo'lgandagina chaqiriladi. Avval
+bu tekshiruvsiz chaqirilar edi — kamdan-kam holatda (ikkita deyarli bir vaqtdagi
+xabar/tahrir) Bitrix'dagi Deal'ni noto'g'ri "shartnoma yo'q"ga qaytarib yuborishi
+mumkin edi. Boshqa hamma joy to'liq qayta tekshirildi — muammo topilmadi.

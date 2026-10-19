@@ -217,14 +217,17 @@ def zayavkani_tekshir(zayavka, mijoz, xabar, chat_id):
 
     if shartnoma["holat"] != "faol":  # agar shartnoma umuman topilmasa yoki muddati o'tgan bo'lsa
         # zayavka FAQAT hali xodim qo'liga o'tmagan bo'lsa "shartnoma_yoq" bo'ladi (poyga holatidan himoya)
-        db.zayavkani_shartli_yangila(
+        otdimi = db.zayavkani_shartli_yangila(
             zayavka["id"], ["malumot_kutilmoqda", "navbatda", "shartnoma_yoq"], holat="shartnoma_yoq"
         )
         shartnoma_yoq_xabar_yubor(mijoz, xabar, chat_id, shartnoma["holat"])
-        bitrix.zayavkani_sinxronla(
-            mijoz, zayavka, "shartnoma_yoq",
-            izoh=f"Shartnoma holati: {shartnoma['holat']}.\n{zayavka.get('matn') or ''}"
-        )
+        if otdimi:  # faqat BIZ chindan shu holatga o'tkazgan bo'lsak Bitrix'ga yozamiz —
+            # aks holda zayavka allaqachon boshqa (masalan "jarayonda") holatga o'tgan bo'lishi mumkin,
+            # va Bitrix'dagi Deal'ni bekorga orqaga qaytarib yubormasligimiz kerak
+            bitrix.zayavkani_sinxronla(
+                mijoz, zayavka, "shartnoma_yoq",
+                izoh=f"Shartnoma holati: {shartnoma['holat']}.\n{zayavka.get('matn') or ''}"
+            )
         return  # xodimlarni chaqirmasdan, jarayonni shu yerda to'xtatamiz
 
     zayavkani_navbatga_qoy(zayavka, mijoz, kompaniya_nomi, chat_id, javob_xabar_id)
