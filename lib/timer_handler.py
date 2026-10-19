@@ -6,6 +6,7 @@ import html  # kompaniya nomini Telegram HTML xabariga xavfsiz qo'yish uchun
 from datetime import timedelta  # kunlarni hisoblash uchun (baholash muddatini tekshirish uchun kerak)
 from lib import db  # ma'lumotlar bazasi funksiyalari
 from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
+from lib import bitrix  # Bitrix24 CRM bilan sinxronlash funksiyasi
 from lib.config import TAYMER_JAMI_DAQIQA, TAYMER_SARIQ_DAQIQA, BAHOLASH_MUDDAT_KUN  # sozlamalar
 
 
@@ -75,6 +76,7 @@ def muddat_tugadi(zayavka):
 
     mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
     if mijoz:
+        bitrix.zayavkani_sinxronla(mijoz, zayavka, "muddati_otdi", izoh="20 daqiqada javob berilmadi.")
         matn = (
             "🇺🇿 Hurmatli mijoz, uzr so'raymiz — hozirda barcha xodimlarimiz band edi. "
             "Tez orada siz bilan albatta bog'lanamiz. Kutganingiz uchun rahmat!\n\n"

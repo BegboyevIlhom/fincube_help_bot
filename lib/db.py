@@ -852,3 +852,14 @@ def kompaniyalar_statistikasi():
 
     natija.sort(key=lambda x: -x["jami"])  # eng ko'p murojaat qilgan kompaniya birinchi
     return natija[:15]  # ro'yxat cheksiz uzun bo'lib ketmasligi uchun eng faol 15 tasini qaytaramiz
+
+
+def mijoz_bitrix_malumotini_yangila(mijoz_id, bitrix_contact_id=None, bitrix_deal_id=None):
+    # mijozga Bitrix'dagi Kontakt va Deal ID'larini saqlaydi (keyingi murojaatlarda qayta ishlatish uchun)
+    maydonlar = {}
+    if bitrix_contact_id is not None:
+        maydonlar["bitrix_contact_id"] = bitrix_contact_id
+    if bitrix_deal_id is not None:
+        maydonlar["bitrix_deal_id"] = bitrix_deal_id
+    if maydonlar:
+        _client.table("mijozlar").update(maydonlar).eq("id", mijoz_id).execute()

@@ -8,6 +8,7 @@ from lib import db  # ma'lumotlar bazasi funksiyalari
 from lib import telegram as tg  # Telegramga xabar yuborish funksiyalari
 from lib import sheets  # Google Sheets'dagi mijozlar bazasini tekshirish funksiyasi
 from lib.logic import malumot_toliqmi, shubhali_raqamlarni_top  # INN/telefon tekshiruvchi funksiyalar
+from lib import bitrix  # Bitrix24 CRM bilan sinxronlash funksiyasi
 from lib.config import (
     SUPPORT_GROUP_IDLAR, SHARTNOMA_XODIM_NICK, SHARTNOMA_XODIM_TEL, APP_URL,
     MUMKIN_YONALISHLAR, QONGIROQ_URINISH_MAKS, BOT_USERNAME
@@ -197,6 +198,8 @@ def zayavkani_tekshir(zayavka, mijoz, xabar, chat_id):
 
     # ma'lumot to'liq bo'lsa — mijozning INN/telefonini bazaga yozamiz (birinchi ikkita topilgan raqam sifatida)
     db.mijoz_malumotini_yangila(mijoz["id"], raqamlar[0], raqamlar[1])
+    mijoz["inn"] = raqamlar[0]        # mahalliy nusxani ham yangilaymiz — Bitrix sinxronlashda kerak
+    mijoz["telefon"] = raqamlar[1]
 
     # ENDI eng muhim tekshiruv: shu INN bo'yicha amaldagi support shartnomasi bormi?
     # (Google Sheets'dagi "Ligotniy" va "Platniy" jadvallaridan tekshiramiz)
@@ -218,16 +221,22 @@ def zayavkani_tekshir(zayavka, mijoz, xabar, chat_id):
             zayavka["id"], ["malumot_kutilmoqda", "navbatda", "shartnoma_yoq"], holat="shartnoma_yoq"
         )
         shartnoma_yoq_xabar_yubor(mijoz, xabar, chat_id, shartnoma["holat"])
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "shartnoma_yoq",
+            izoh=f"Shartnoma holati: {shartnoma['holat']}.\n{zayavka.get('matn') or ''}"
+        )
         return  # xodimlarni chaqirmasdan, jarayonni shu yerda to'xtatamiz
 
-    zayavkani_navbatga_qoy(zayavka, kompaniya_nomi, chat_id, javob_xabar_id)
+    zayavkani_navbatga_qoy(zayavka, mijoz, kompaniya_nomi, chat_id, javob_xabar_id)
 
 
-def zayavkani_navbatga_qoy(zayavka, kompaniya_nomi, chat_id, javob_xabar_id):
+def zayavkani_navbatga_qoy(zayavka, mijoz, kompaniya_nomi, chat_id, javob_xabar_id):
     # zayavkani navbatga qo'yadi, mijozga rasmiy xabar yuboradi va bo'sh xodimlarga SHAXSIY bildirishnoma beradi.
     # Guruhda xodimlar tag QILINMAYDI — ular zayavkani Mini App'da ko'radi
     if not db.zayavkani_atomik_navbatga_qoy(zayavka["id"]):
         return False  # zayavka allaqachon navbatda (yoki xodim qo'lida) — qayta xabar yubormaymiz
+
+    bitrix.zayavkani_sinxronla(mijoz, zayavka, "navbatda", izoh=zayavka.get("matn"))
 
     # 1) mijozga guruhda rasmiy xabar (uning xabariga reply qilib). Xabar ID'sini saqlab qo'yamiz —
     # xodim qabul qilganda/yakunlaganda shu xabarning O'ZI tahrirlanib, status yangilanadi (yangi xabar yozilmaydi)
@@ -538,6 +547,13 @@ def zayavkani_qabul_qil(xodim, zayavka_id):
     # xodimni "band" holatiga o'tkazamiz
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka["id"])
 
+    mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
+    if mijoz:
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "jarayonda", xodim.get("bitrix_user_id"),
+            izoh=f"{xodim['ism_familiya']} qabul qildi."
+        )
+
     # DIQQAT: guruhga hech narsa yozilmaydi va statusda kim qabul qilgani ko'rsatilmaydi — bu faqat Mini App'da ko'rinadi
 
     return {"ok": True, "xabar": "Qabul qilindi, omad!"}
@@ -572,6 +588,13 @@ def zayavkani_tugat(xodim, zayavka_id):
 
     # xodimni yana "bosh" holatiga qaytaramiz
     db.xodim_holatini_yangila(xodim["id"], "bosh", None)
+
+    mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
+    if mijoz:
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "tugallandi", xodim.get("bitrix_user_id"),
+            izoh=f"Consultatsiya yakunlandi ({xodim['ism_familiya']}). Yo'nalish: {', '.join(yonalishlar)}."
+        )
 
     # endi mijozga baholash so'rovini yuboramiz (1-5 yulduzcha, majburiy)
     baholash_sorovini_yubor(zayavka, xodim)
@@ -648,6 +671,13 @@ def zayavkani_kutishdan_davom_ettir(xodim, zayavka_id):
 
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
 
+    mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
+    if mijoz:
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "jarayonda", xodim.get("bitrix_user_id"),
+            izoh=f"{xodim['ism_familiya']} kutishdan davom ettirdi."
+        )
+
     # DIQQAT: guruhga hech narsa yozilmaydi — status allaqachon "... qabul qildi" turibdi
 
     return {"ok": True, "xabar": "Davom ettirildi. Vaqt qolgan joyidan hisoblanadi."}
@@ -689,6 +719,10 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
         # lekin bu mijoz "Qayta aloqaga chiqish" bo'limida turaveradi, xodim tayyor bo'lganda yana qabul qiladi
         db.zayavkani_yangila(zayavka_id, holat="qayta_aloqa")
         db.xodim_holatini_yangila(xodim["id"], "bosh", None)
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "qayta_aloqa",
+            izoh=f"Mijoz telefonni ko'tarmadi ({yangi_son}/{QONGIROQ_URINISH_MAKS})."
+        )
 
         # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz — bu holat allaqachon
         # Mini App'dagi "Qayta aloqaga chiqish" bo'limida to'liq ko'rinib turibdi
@@ -715,6 +749,7 @@ def zayavkani_javob_bermadi_deb_belgila(xodim, zayavka_id):
     # zayavkani yopamiz (alohida holat — "tugallandi" bilan aralashib ketmasin, statistikada alohida sanaladi)
     db.zayavkani_yangila(zayavka_id, holat="javob_bermadi", tugallangan_vaqt=db.hozir().isoformat())
     db.xodim_holatini_yangila(xodim["id"], "bosh", None)  # xodim endi bo'sh
+    bitrix.zayavkani_sinxronla(mijoz, zayavka, "javob_bermadi", izoh="Mijoz bilan bog'lanib bo'lmadi, zayavka yopildi.")
 
     # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz — bu holat Mini App'dagi
     # "Javob bermadi" bo'limida to'liq ko'rinib turibdi
@@ -747,6 +782,13 @@ def zayavkani_qayta_qabul_qil(xodim, zayavka_id):
         yangilanish["kutish_jami_soniya"] = 0
     db.zayavkani_yangila(zayavka_id, **yangilanish)
     db.xodim_holatini_yangila(xodim["id"], "band", zayavka_id)
+
+    mijoz = db.mijoz_id_orqali(zayavka["mijoz_id"])
+    if mijoz:
+        bitrix.zayavkani_sinxronla(
+            mijoz, zayavka, "jarayonda", xodim.get("bitrix_user_id"),
+            izoh=f"{xodim['ism_familiya']} qayta qabul qildi."
+        )
 
     # DIQQAT: guruhga endi hech qanday qo'shimcha xabar yubormaymiz
 

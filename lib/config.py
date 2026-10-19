@@ -69,3 +69,27 @@ PLATNIY_VARAQ = os.environ.get("PLATNIY_VARAQ", "Platniy")
 # (mijozga "shartnomangiz yo'q/tugagan" xabarida shu kontakt ko'rsatiladi)
 SHARTNOMA_XODIM_NICK = os.environ.get("SHARTNOMA_XODIM_NICK", "@sotuv_menejer")
 SHARTNOMA_XODIM_TEL = os.environ.get("SHARTNOMA_XODIM_TEL", "+998 90 000 00 00")
+
+# ---------------------- BITRIX24 (CRM) ----------------------
+
+# Incoming webhook manzili (Vercel Environment Variables'dan olinadi, kodga yozilmaydi)
+BITRIX_WEBHOOK_URL = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
+
+# "Support" varonkasining (Category) ID raqami
+BITRIX_CATEGORY_ID = os.environ.get("BITRIX_CATEGORY_ID", "")
+
+# INN saqlanadigan maxsus maydonning kodi
+BITRIX_FIELD_INN = os.environ.get("BITRIX_FIELD_INN", "UF_CRM_INN")
+
+# Bizning ichki holatlarimizni Bitrix bosqich kodlariga moslashtiruvchi lug'at.
+# Har biri alohida Environment Variable'dan o'qiladi — portal almashganda
+# faqat shu qiymatlarni Vercel'da yangilash kifoya, kodga tegilmaydi.
+BITRIX_BOSQICHLAR = {
+    "navbatda": os.environ.get("BITRIX_STAGE_NAVBATDA", ""),
+    "jarayonda": os.environ.get("BITRIX_STAGE_JARAYONDA", ""),
+    "qayta_aloqa": os.environ.get("BITRIX_STAGE_QAYTA_ALOQA", ""),
+    "shartnoma_yoq": os.environ.get("BITRIX_STAGE_SHARTNOMA_YOQ", ""),
+    "tugallandi": os.environ.get("BITRIX_STAGE_TUGALLANDI", ""),
+    "javob_bermadi": os.environ.get("BITRIX_STAGE_JAVOB_BERMADI", ""),
+    "muddati_otdi": os.environ.get("BITRIX_STAGE_MUDDATI_OTDI", ""),
+}

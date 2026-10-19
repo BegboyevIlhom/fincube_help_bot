@@ -139,3 +139,10 @@ NOTIFY pgrst, 'reload schema';
 alter table zayavkalar add column if not exists kutish_boshlangan_vaqt timestamptz;
 alter table zayavkalar add column if not exists kutish_jami_soniya integer not null default 0;
 NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- QO'SHIMCHA: Bitrix24 CRM integratsiyasi uchun
+-- ============================================================
+alter table mijozlar add column if not exists bitrix_contact_id bigint;
+alter table mijozlar add column if not exists bitrix_deal_id bigint;
+alter table xodimlar add column if not exists bitrix_user_id bigint;
