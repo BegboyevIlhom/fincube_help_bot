@@ -17,6 +17,13 @@ _INN_YORLIQ_SOZI = re.compile(r"(?i)\b(?:inn|stir|tin|инн|стир)\b")
 # (1С — "1C" dasturi, FINCUBE mijozlari buni tez-tez eslatadi, shuning uchun bu muhim)
 _RAQAM_SOZI = re.compile(r"^[+\d\-()]+$")
 
+# Agar so'z boshida/oxirida tinish belgisi (":", ";", ",", "." va h.k.) bo'lsa — masalan
+# label bilan raqam orasida bo'shliq QOLDIRILMAGAN holatda ("tel;938535257") — shu
+# belgilarni chetlardan olib tashlab, keyin tekshiramiz. Bu harflarga (masalan "1С"dagi
+# "С"ga) TEGMAYDI, faqat tinish belgilariga tegadi — shuning uchun "1С" baribir to'g'ri
+# rad etiladi, "tel;938535257" esa endi to'g'ri qabul qilinadi
+_CHETDAGI_TINISH_BELGILARI = re.compile(r"^[:;,.!?'\"«»]+|[:;,.!?'\"«»]+$")
+
 
 def _raqam_guruhlarini_top(matn):
     # matnni bo'shliq bo'yicha so'zlarga bo'lib, KETMA-KET kelgan "faqat raqam" so'zlarni
@@ -27,8 +34,11 @@ def _raqam_guruhlarini_top(matn):
     guruhlar = []
     joriy = []
     for soz in matn.split():
-        if _RAQAM_SOZI.match(soz):
-            joriy.append(soz)
+        # chetlardagi tinish belgilarini olib tashlab, so'zning "yadro"sini tekshiramiz
+        # (masalan "tel;938535257" -> ";938535257" so'zining yadrosi "938535257")
+        yadro = _CHETDAGI_TINISH_BELGILARI.sub("", soz)
+        if yadro and _RAQAM_SOZI.match(yadro):
+            joriy.append(yadro)  # tozalangan holda qo'shamiz — keyingi guruhlashda ham toza bo'lsin
         else:
             if joriy:
                 guruhlar.append("".join(joriy))

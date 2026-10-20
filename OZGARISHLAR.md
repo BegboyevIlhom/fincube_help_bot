@@ -66,3 +66,12 @@ bazaviy (shartli/atomik) yozuv chindan muvaffaqiyatli bo'lgandagina chaqiriladi.
 bu tekshiruvsiz chaqirilar edi — kamdan-kam holatda (ikkita deyarli bir vaqtdagi
 xabar/tahrir) Bitrix'dagi Deal'ni noto'g'ri "shartnoma yo'q"ga qaytarib yuborishi
 mumkin edi. Boshqa hamma joy to'liq qayta tekshirildi — muammo topilmadi.
+
+## 5. (v4) Yana bitta "1С-fix"dan kelib chiqqan nuqson tuzatildi
+`lib/logic.py` — agar label (masalan "tel") raqamga **bo'shliqsiz, tinish belgisi bilan**
+yopishgan bo'lsa (masalan "tel;938535257", bo'shliqsiz ";" bilan), oldingi tuzatishim
+bu raqamni butunlay yo'qotib yuborar edi (chunki so'z ";" bilan boshlangani uchun
+"sof raqam" deb hisoblanmas edi). Endi so'zning chetidagi tinish belgilari (:, ;, ,, .
+va h.k.) avval olib tashlanadi, SHUNDAN KEYIN "sof raqammi" deb tekshiriladi — bu "1С"
+tuzatishiga TEGMAYDI (harflar hamon to'g'ri rad etiladi), faqat tinish belgilarini
+to'g'ri o'tkazib yuboradi. 10 xil holat bilan qayta sinovdan o'tkazildi, hammasi to'g'ri.
