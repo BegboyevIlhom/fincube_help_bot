@@ -98,3 +98,38 @@ Ligotniy'da toza INN + kechagi sana bilan MUDDATI O'TGAN shartnoma) bilan tekshi
 **Diqqat:** qidiruv TARTIBI (Platniy/Ligotniy ikkalasini ham to'liq tekshirib, eng
 yaxshi/eng uzoq sanani tanlash) allaqachon to'g'ri ishlar edi — bu muammo emas edi.
 Asosiy xato INN va sarlavha solishtirishning haddan tashqari qattiqligida edi.
+
+## 7. (v6) Label-siz, ikkita yopishgan raqam muammosi — TUZATILDI
+`lib/logic.py` — agar mijoz INN va telefonni **label (so'z) bilan ajratmasdan**, faqat
+bo'shliq bilan yozsa (masalan "ИНН 306724336   977929193" — ikkinchi raqam oldida
+"tel" so'zi yo'q), oldingi guruhlash mantig'i ikkala TO'LIQ raqamni bitta 18 xonali
+"raqam"ga birlashtirib yuborar edi, natijada ikkalasi ham yo'qolardi.
+
+Endi guruhlash har safar **aynan 9 xonaga yetganda** to'xtab, yangi guruh boshlaydi —
+bu "90 123 45 67" kabi ATAYLAB guruhlangan yagona raqamlarni (hali 9 xonaga yetmagan)
+va "+998 90 123 45 67" kabi 12 xonali raqamlarni (9 dan 12 gacha o'sishni) BUZMAYDI,
+lekin ikkita ORTIQCHA, to'liq 9 xonali raqamni endi to'g'ri ikkiga ajratadi.
+
+14 xil holat (barcha avvalgi + bu yangisi + uch raqamli holat) bilan qayta sinovdan
+o'tkazildi, hammasi to'g'ri.
+
+## 8. (v7) logic.py TUBDAN qayta yozildi — belgi-ba-belgi skanerlash
+Oldingi "so'z-asosidagi" yondashuv asosiy jihati bo'yicha chekli edi: so'z ICHIDAGI
+(bo'shliqsiz) ajratuvchilarni ("/", "," kabi — masalan "304462751/901234567") ko'ra
+olmasdi. Shuningdek, "9 taga yetganda to'xta" qoidasi 12 xonali (+998) raqamlarning
+o'RTASIDA ham ishlab ketib, NOTO'G'RI qiymat (masalan to'g'ri "901234567" o'rniga
+xato "998901234") qaytarardi — bu matn TO'G'RI qabul qilingan taqdirda ham, Bitrix'ga
+XATO telefon raqami yozilishiga olib kelishi mumkin edi.
+
+Butun fayl endi matnni BELGI-BA-BELGI (harf, raqam, bog'lovchi) aylanib chiqadigan,
+ancha soddaroq va mustahkamroq mantiqqa o'tkazildi:
+- Raqam va bog'lovchi belgilar (bo'shliq, +, -, (, ), ., /, ,) bitta guruhga yig'iladi.
+- Guruh aynan 9 ta raqamga yetganda — agar "998" bilan BOSHLANMAGAN bo'lsa, yangi guruh
+  boshlanadi (ikkita ortiqcha yopishgan raqamni ajratish uchun); "998" bilan boshlangan
+  bo'lsa, 12 taga yetguncha davom etadi (to'g'ri +998 qiymatini saqlash uchun).
+- Harf yoki boshqa har qanday belgi (":", ";" va h.k.) — "chegara": guruh darhol
+  yakunlanadi, hech qanday raqamga ulanmaydi (1С-fix saqlanib qoldi).
+- Sana ko'rinishidagi ketma-ketliklar ("20.12.2026") hamon raqam deb hisoblanmaydi.
+
+20 xil holat bilan, SHU JUMLADAN natijadagi RAQAM QIYMATLARINING o'ZI (nafaqat
+to'liq/to'liq-emas) bilan sinovdan o'tkazildi — hammasi to'g'ri.

@@ -3,53 +3,96 @@
 
 import re  # matn ichidan raqamlarni qidirish uchun "regular expression" kutubxonasi
 
-_KALIT_SOZLAR = re.compile(
-    r"(?i)\b(?:inn|stir|telefon|tel|raqami|raqam|nomeri|nomer|phone|"
-    r"инн|стир|телефон|тел|рақами|рақам|номери|номер)\b"
-)
-
 _INN_YORLIQ_SOZI = re.compile(r"(?i)\b(?:inn|stir|tin|инн|стир)\b")
 
-# Bitta "so'z" (bo'shliqlar bilan ajratilgan) FAQAT raqam/+/-/() belgilaridan iborat bo'lsa,
-# u "raqam qismi" hisoblanadi. Agar so'zda bitta ham harf bo'lsa (masalan "1С", "2GIS"),
-# bu so'z "raqam emas" deb hisoblanadi va qo'shni raqamlarga ASLO ulanib ketmaydi —
-# shunday qilib "993808010 1С" deganda "1С" telefon raqamiga ulanib qolmaydi
-# (1С — "1C" dasturi, FINCUBE mijozlari buni tez-tez eslatadi, shuning uchun bu muhim)
-_RAQAM_SOZI = re.compile(r"^[+\d\-()]+$")
+# Raqamlar orasida "bog'lovchi" (ajratuvchi, lekin raqamni UZMAYDIGAN) hisoblanadigan
+# belgilar: bo'shliq, +, -, (, ), nuqta, qiyshiq chiziq, vergul. Shu belgilar orqali
+# yozilgan raqamlar ("90 123 45 67", "304.462.751", "304/462/751", "+998-90-123-45-67")
+# BITTA raqam deb hisoblanadi
+_BOGLOVCHI_BELGI = re.compile(r"[\s+\-().,/]")
 
-# Agar so'z boshida/oxirida tinish belgisi (":", ";", ",", "." va h.k.) bo'lsa — masalan
-# label bilan raqam orasida bo'shliq QOLDIRILMAGAN holatda ("tel;938535257") — shu
-# belgilarni chetlardan olib tashlab, keyin tekshiramiz. Bu harflarga (masalan "1С"dagi
-# "С"ga) TEGMAYDI, faqat tinish belgilariga tegadi — shuning uchun "1С" baribir to'g'ri
-# rad etiladi, "tel;938535257" esa endi to'g'ri qabul qilinadi
-_CHETDAGI_TINISH_BELGILARI = re.compile(r"^[:;,.!?'\"«»]+|[:;,.!?'\"«»]+$")
+# Sana shaklidagi ketma-ketlikni ("20.12.2026", "20/12/2026") RAQAM deb QABUL QILMASLIK
+# uchun — aks holda xabar ichida tasodifan aytilgan sana (masalan "shartnoma 20.12.2026
+# gacha") INN/telefon qidiruvini chalg'itib, noto'g'ri ogohlantirishga olib kelishi mumkin
+_SANA_SHAKLI = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{2,4}$")
+
+
+def _guruh_yaroqlimi(xom_guruh):
+    # bo'sh yoki faqat bog'lovchi belgilardan iborat (hech qanday raqamsiz) guruhlarni,
+    # shuningdek sana ko'rinishidagi guruhlarni RAQAM EMAS deb hisoblaymiz
+    if not xom_guruh:
+        return False
+    tozalangan = xom_guruh.strip(" +-().,/")
+    if not tozalangan or not any(belgi.isdigit() for belgi in tozalangan):
+        return False
+    if _SANA_SHAKLI.match(tozalangan):
+        return False
+    return True
 
 
 def _raqam_guruhlarini_top(matn):
-    # matnni bo'shliq bo'yicha so'zlarga bo'lib, KETMA-KET kelgan "faqat raqam" so'zlarni
-    # bitta guruh qilib birlashtiradi (masalan "90 123 45 67" -> bitta guruh).
-    # Harf aralashgan so'z guruhni albatta to'xtatadi va o'zi hech qanday guruhga QO'SHILMAYDI
+    # Matnni BELGI-BA-BELGI aylanib chiqadi (so'zlarga bo'lmasdan — shunday qilib
+    # bo'shliqsiz yopishgan ikkita raqamni ham, masalan "304462751/901234567" yoki
+    # "304462751,901234567", to'g'ri ajrata oladi).
+    #
+    # Qoida:
+    #   - RAQAM uchrasa — joriy guruhga qo'shiladi; LEKIN agar joriy guruh ALLAQACHON
+    #     aynan 9 ta raqamga yetgan bo'lsa, bu YANGI raqam boshlanayotganini bildiradi —
+    #     eski guruh yakunlanadi va yangisi shu raqamdan boshlanadi. Shunday qilib
+    #     "90 123 45 67" (hali 9 taga yetmagan) yoki "+998 90 123 45 67" (9 dan 12 gacha
+    #     o'sadigan) kabi ATAYLAB guruhlangan YAGONA raqamlar buzilmaydi, lekin ikkita
+    #     TO'LIQ, ortiqcha yopishgan raqam ("306724336977929193" yoki ".../...") to'g'ri
+    #     ikkiga bo'linadi.
+    #   - BOG'LOVCHI belgi (bo'shliq, +, -, ., /, (, ), vergul) uchrasa — joriy guruh
+    #     davom etadi (raqam sonini oshirmaydi, faqat matnni saqlaydi).
+    #   - Boshqa HAR QANDAY belgi (harf, ":", ";" va h.k.) uchrasa — bu "chegara":
+    #     joriy guruh (agar yaroqli bo'lsa) yakunlanadi va hech qanday raqamga
+    #     ULANMAYDI. Shu sabab "993808010 1С" deganda "1С" raqamga yopishib qolmaydi
+    #     (1С — "1C" dasturi, FINCUBE mijozlari buni tez-tez eslatadi), xuddi shunday
+    #     "tel;938535257" dagi "tel" so'zi ham raqamga ulanib ketmaydi
     if not matn:
         return []
+
     guruhlar = []
-    joriy = []
-    for soz in matn.split():
-        # chetlardagi tinish belgilarini olib tashlab, so'zning "yadro"sini tekshiramiz
-        # (masalan "tel;938535257" -> ";938535257" so'zining yadrosi "938535257")
-        yadro = _CHETDAGI_TINISH_BELGILARI.sub("", soz)
-        if yadro and _RAQAM_SOZI.match(yadro):
-            joriy.append(yadro)  # tozalangan holda qo'shamiz — keyingi guruhlashda ham toza bo'lsin
-        else:
-            if joriy:
-                guruhlar.append("".join(joriy))
-                joriy = []
-    if joriy:
-        guruhlar.append("".join(joriy))
+    joriy = ""  # xom matn (bog'lovchilar bilan birga)
+    joriy_raqamlar = ""  # joriy guruhdagi FAQAT raqamlar (tezkor tekshirish uchun)
+
+    for belgi in matn:
+        if belgi.isdigit():
+            # TO'XTATISH QOIDASI: agar joriy guruh aynan 9 ta raqamga yetgan bo'lsa VA bu
+            # "998" bilan BOSHLANMAGAN bo'lsa — demak bu TO'LIQ, alohida 9 xonali raqam,
+            # yangisi boshlanmoqda. Lekin "998" bilan boshlangan bo'lsa — hali 12 xonali
+            # (+998) raqam bo'lish extimoli bor, shuning uchun 12 taga yetguncha davom
+            # ettiramiz. 12 taga yetganda esa — har doim to'xtatamiz (bundan uzun bo'lishi
+            # mumkin emas)
+            toxtatish_kerak = (
+                (len(joriy_raqamlar) == 9 and not joriy_raqamlar.startswith("998"))
+                or len(joriy_raqamlar) == 12
+            )
+            if toxtatish_kerak:
+                if _guruh_yaroqlimi(joriy):
+                    guruhlar.append(joriy)
+                joriy = ""
+                joriy_raqamlar = ""
+            joriy += belgi
+            joriy_raqamlar += belgi
+        elif _BOGLOVCHI_BELGI.match(belgi):
+            if joriy:  # guruh hali boshlanmagan bo'lsa, bekorchi bog'lovchini saqlamaymiz
+                joriy += belgi
+        else:  # harf yoki boshqa chegara belgisi
+            if _guruh_yaroqlimi(joriy):
+                guruhlar.append(joriy)
+            joriy = ""
+            joriy_raqamlar = ""
+
+    if _guruh_yaroqlimi(joriy):
+        guruhlar.append(joriy)
+
     return guruhlar
 
 
 def _qismdan_raqamlarni_ajrat(qism):
-    # bitta matn qismi (bolak yoki kichik_qism) ichidagi barcha 9/12(+998) xonali raqamlarni qaytaradi
+    # bitta matn qismi ichidagi barcha 9/12(+998) xonali raqamlarni qaytaradi
     natija = []
     for guruh in _raqam_guruhlarini_top(qism):
         faqat_raqam = re.sub(r"\D", "", guruh)
@@ -65,20 +108,7 @@ def toqqiz_xonali_raqamlarni_top(matn):
     # natija — matn ichidan topilgan barcha 9 xonali raqamlar ro'yxati (masalan INN va telefon)
     if not matn:
         return []
-
-    natija = []
-    # matnni vergul/nuqta-vergul (BO'SHLIQDAN OLDIN kelsa) yoki yangi qator bo'yicha bo'lamiz
-    asosiy_boklar = re.split(r"[,;]\s+|\n+", matn)
-
-    for bolak in asosiy_boklar:
-        # "INN", "telefon" kabi so'zlar ko'rinishidagi yorliqlar atrofida ham to'g'ri ajratish uchun,
-        # bolakni shu kalit so'zlar bo'yicha kichikroq qismlarga bo'lamiz (label bo'lmasa, bolakning o'zi qoladi)
-        kichik_qismlar = _KALIT_SOZLAR.split(bolak)
-        manba = kichik_qismlar if len(kichik_qismlar) > 1 else [bolak]
-        for qism in manba:
-            natija.extend(_qismdan_raqamlarni_ajrat(qism))
-
-    # takrorlanmagan (bir xil bo'lmagan) raqamlarni qaytaramiz
+    natija = _qismdan_raqamlarni_ajrat(matn)
     return list(dict.fromkeys(natija))  # dict.fromkeys tartibni saqlab, takrorlarni olib tashlaydi
 
 
@@ -109,17 +139,9 @@ def shubhali_raqamlarni_top(matn):
     # "deyarli to'g'ri" (9 xonali BO'LISHI kerak edi, lekin bo'lmagan) raqamlarni topadi
     if not matn:
         return []
-
     natija = []
-    asosiy_boklar = re.split(r"[,;]\s+|\n+", matn)
-
-    for bolak in asosiy_boklar:
-        kichik_qismlar = _KALIT_SOZLAR.split(bolak)
-        manba = kichik_qismlar if len(kichik_qismlar) > 1 else [bolak]
-        for qism in manba:
-            for guruh in _raqam_guruhlarini_top(qism):
-                faqat_raqam = re.sub(r"\D", "", guruh)
-                if len(faqat_raqam) in (7, 8, 10, 11):
-                    natija.append(faqat_raqam)
-
+    for guruh in _raqam_guruhlarini_top(matn):
+        faqat_raqam = re.sub(r"\D", "", guruh)
+        if len(faqat_raqam) in (7, 8, 10, 11):
+            natija.append(faqat_raqam)
     return list(dict.fromkeys(natija))
