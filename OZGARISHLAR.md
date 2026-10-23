@@ -133,3 +133,14 @@ ancha soddaroq va mustahkamroq mantiqqa o'tkazildi:
 
 20 xil holat bilan, SHU JUMLADAN natijadagi RAQAM QIYMATLARINING o'ZI (nafaqat
 to'liq/to'liq-emas) bilan sinovdan o'tkazildi — hammasi to'g'ri.
+
+## 9. (v8) "@belgilash (mention)" cheklovi olib tashlandi
+`lib/webhook_handler.py`dagi `mijoz_xabarimi()` funksiyasida, xabarda kimnidir "@" bilan
+belgilash (mention) bo'lsa, bot buni mijoz murojaati deb hisoblamasdan e'tiborsiz
+qoldirar edi. Bu tekshiruv OLIB TASHLANDI — endi mention bo'lgan xabarlar ham, boshqa
+shartlar (odamga reply emasligi, xodim yozmaganligi) bajarilsa, oddiy murojaat sifatida
+qabul qilinadi.
+
+Bu funksiya (`mijoz_xabarimi`) ham YANGI, ham TAHRIRLANGAN xabarlarga bir xil qo'llanadi,
+shuning uchun o'zgarish ikkalasiga ham ta'sir qiladi. Qolgan ikkita cheklov (odamga
+to'g'ridan-to'g'ri reply qilingan xabar, va xodimning o'z xabari) o'zgarishsiz qoldi.

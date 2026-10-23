@@ -89,13 +89,6 @@ def mijoz_xabarimi(xabar):
         print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
         return False
 
-    # xuddi shunday: agar xabarda kimnidir @ bilan belgilab chaqirish (mention) bo'lsa — bu ham
-    # to'g'ridan-to'g'ri kimgadir qaratilgan xabar, umumiy support so'rovi emas
-    mentionlar_bormi = any(e.get("type") in ("mention", "text_mention") for e in xabar.get("entities", []))
-    if mentionlar_bormi:
-        print("E'TIBORSIZ QOLDIRILDI: xabarda @belgilash (mention) bor")
-        return False
-
     # agar xabarni xodimlardan biri yozgan bo'lsa — bu mijoz murojaati emas, shuning uchun e'tiborsiz qoldiramiz
     yuboruvchi_id = xabar.get("from", {}).get("id")
     aniqlangan_xodim = db.xodim_topilsin(yuboruvchi_id)
