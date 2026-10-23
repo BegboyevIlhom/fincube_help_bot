@@ -3,6 +3,7 @@
 # "google-auth" bilan token olib, oddiy HTTP so'rov (requests) orqali ma'lumot o'qiymiz
 
 import json  # xizmat hisobi kalitini (JSON) o'qish uchun
+import re  # INN qiymatini "tozalash" (faqat raqamlarni qoldirish) uchun
 from datetime import datetime, date  # sana bilan solishtirish uchun
 import requests  # Google API'ga HTTP so'rov yuborish uchun
 from google.oauth2 import service_account  # xizmat hisobi (Service Account) orqali kirish uchun
@@ -30,6 +31,15 @@ def _varaqni_oqi(varaq_nomi):
     return javob.json().get("values", [])  # qatorlar ro'yxati (har biri — ustunlar ro'yxati)
 
 
+def _faqat_raqam(matn):
+    # berilgan matndan FAQAT raqamlarni qoldiradi (bo'shliq, vergul, tire va h.k.ni olib tashlaydi).
+    # MUHIM: Google Sheets'da INN ustuni "raqam" turida saqlangan bo'lsa, Google uni ba'zan
+    # "313 003 874" yoki "313,003,874" ko'rinishida formatlab qaytarishi mumkin — bizning
+    # tomonimizdagi toza "313003874" bilan so'z-ba-so'z solishtirilsa, mos kelmay qoladi.
+    # Shuning uchun ikkala tomonni ham shu funksiya orqali "tozalab" solishtiramiz
+    return re.sub(r"\D", "", matn or "")
+
+
 def _sanani_ayir(matn):
     # jadvaldan kelgan "20.12.2026" ko'rinishidagi sanani Python sana obyektiga aylantiradi
     if not matn:
@@ -40,14 +50,29 @@ def _sanani_ayir(matn):
         return None  # kutilmagan formatda bo'lsa, sanasiz deb hisoblaymiz
 
 
+def _ustun_nomi_mosmi(katak, nom):
+    # ustun nomini solishtirishda ortiqcha bo'shliq va katta/kichik harfga E'TIBOR BERMAYMIZ —
+    # masalan "ИНН ", " инн" yoki "инн" hammasi "ИНН" bilan bir xil hisoblanadi
+    return (katak or "").strip().upper() == nom.strip().upper()
+
+
 def _sarlavha_qatorini_top(qatorlar):
     # ba'zi jadvallarda birinchi qatorda "Таблица1" kabi filter/jadval nomi bo'lishi mumkin,
     # haqiqiy ustun nomlari esa 2-qatorda turishi mumkin. Shuning uchun sarlavhani "qidirib" topamiz —
     # ichida "ИНН" so'zi bo'lgan BIRINCHI qatorni haqiqiy sarlavha deb hisoblaymiz
     for indeks, qator in enumerate(qatorlar[:5]):  # faqat birinchi 5 qatorni tekshirish yetarli
-        if "ИНН" in qator:
+        if any(_ustun_nomi_mosmi(katak, "ИНН") for katak in qator):
             return indeks, qator
     return None, None  # 5 qator ichida "ИНН" topilmasa, bu varaqni o'qib bo'lmaydi
+
+
+def _ustun_top(sarlavha, nom):
+    # sarlavha qatoridan berilgan nomdagi ustunning tartib raqamini topadi (bo'shliq/katta-kichik
+    # harfga e'tibor bermasdan). Topilmasa None qaytaradi (sarlavha.index() kabi xato tashlamaydi)
+    for i, katak in enumerate(sarlavha):
+        if _ustun_nomi_mosmi(katak, nom):
+            return i
+    return None
 
 
 def _varaqdan_qidir(varaq_nomi, inn):
@@ -64,17 +89,13 @@ def _varaqdan_qidir(varaq_nomi, inn):
     if sarlavha is None:  # agar "ИНН" so'zi umuman topilmasa
         return None  # bu varaqni o'qib bo'lmaydi
 
-    try:
-        inn_ustun = sarlavha.index("ИНН")  # "ИНН" ustuni qaysi tartib raqamida ekanini topamiz
-        sana_ustun = sarlavha.index("Дата окончания")  # "tugash sanasi" ustuni ham shunday
-    except ValueError:
+    inn_ustun = _ustun_top(sarlavha, "ИНН")  # "ИНН" ustuni qaysi tartib raqamida ekanini topamiz
+    sana_ustun = _ustun_top(sarlavha, "Дата окончания")  # "tugash sanasi" ustuni ham shunday
+    if inn_ustun is None or sana_ustun is None:
         return None  # kerakli ustunlar topilmasa, hech narsa qila olmaymiz
 
     # "kompaniya nomi" ustuni ixtiyoriy — bo'lmasa ham xato bermaymiz, shunchaki nomsiz qoldiramiz
-    try:
-        kompaniya_ustun = sarlavha.index("Наименование организации")
-    except ValueError:
-        kompaniya_ustun = None
+    kompaniya_ustun = _ustun_top(sarlavha, "Наименование организации")
 
     topilgan_qatorlar = []  # shu INN'ga mos BARCHA qatorlarni shu yerga yig'amiz (faqat birinchisini emas)
 
@@ -82,7 +103,7 @@ def _varaqdan_qidir(varaq_nomi, inn):
     for qator in qatorlar[sarlavha_indeksi + 1:]:
         if len(qator) <= max(inn_ustun, sana_ustun):  # agar qator yetarlicha uzun bo'lmasa
             continue  # o'tkazib yuboramiz
-        if qator[inn_ustun].strip() == inn:  # agar INN mos kelsa
+        if _faqat_raqam(qator[inn_ustun]) == inn:  # agar INN mos kelsa (formatidan qat'i nazar)
             kompaniya = None
             if kompaniya_ustun is not None and len(qator) > kompaniya_ustun:
                 kompaniya = qator[kompaniya_ustun].strip() or None

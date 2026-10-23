@@ -86,12 +86,8 @@ def mijoz_xabarimi(xabar):
     # kutilgan holat, shuning uchun bunday holatda jarayonni davom ettiramiz
     javob_berilgan_xabar = xabar.get("reply_to_message")
     if javob_berilgan_xabar and not javob_berilgan_xabar.get("from", {}).get("is_bot"):
-        # mijoz O'Z xabariga reply qilib INN/telefon qo'shsa (masalan avval telefon yozib, keyin INN'ni
-        # o'sha xabarga reply qilib yuborsa) — bu ham murojaatning davomi, e'tiborsiz qoldirmaymiz
-        oz_xabariga_reply = javob_berilgan_xabar.get("from", {}).get("id") == xabar.get("from", {}).get("id")
-        if not oz_xabariga_reply:
-            print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
-            return False
+        print("E'TIBORSIZ QOLDIRILDI: xabar odamning o'ziga (botga emas) reply qilingan")
+        return False
 
     # xuddi shunday: agar xabarda kimnidir @ bilan belgilab chaqirish (mention) bo'lsa — bu ham
     # to'g'ridan-to'g'ri kimgadir qaratilgan xabar, umumiy support so'rovi emas

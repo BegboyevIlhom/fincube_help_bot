@@ -75,3 +75,26 @@ bu raqamni butunlay yo'qotib yuborar edi (chunki so'z ";" bilan boshlangani uchu
 va h.k.) avval olib tashlanadi, SHUNDAN KEYIN "sof raqammi" deb tekshiriladi — bu "1С"
 tuzatishiga TEGMAYDI (harflar hamon to'g'ri rad etiladi), faqat tinish belgilarini
 to'g'ri o'tkazib yuboradi. 10 xil holat bilan qayta sinovdan o'tkazildi, hammasi to'g'ri.
+
+## 6. (v5) Google Sheets: shartnoma "topilmadi" degan noto'g'ri natija — TUZATILDI
+`lib/sheets.py`da ikkita zaif nuqta topildi va tuzatildi:
+
+1. **INN solishtirish juda qattiq edi.** Agar Sheets'da INN ustuni "raqam" turida
+   saqlangan bo'lsa, Google uni ba'zan "313 003 874" yoki "313,003,874" ko'rinishida
+   formatlab qaytarishi mumkin. Bizning tomondagi toza "313003874" bilan so'z-ba-so'z
+   solishtirilgani uchun, mos kelmay, "topilmadi" deb chiqardi — garchi shartnoma
+   chindan bor bo'lsa ham. Endi solishtirishdan oldin ikkala tomondagi raqamlardan
+   FAQAT sonlarni olib solishtiramiz.
+2. **Ustun sarlavhalari ("ИНН", "Дата окончания") aynan bir xil bo'lishi talab
+   qilinardi.** Agar bitta jadvalda sarlavhada ortiqcha bo'shliq yoki boshqacha
+   katta-kichik harf bo'lsa, O'SHA BUTUN JADVAL sukut saqlab o'tkazib yuborilardi
+   (hech qanday xato chiqmasdan). Endi bo'shliq va katta-kichik harfga e'tibor
+   berilmaydi.
+
+Sintetik sinov (Platniy'da bo'shliqli INN + ertangi sana bilan FAOL shartnoma,
+Ligotniy'da toza INN + kechagi sana bilan MUDDATI O'TGAN shartnoma) bilan tekshirildi
+— natija to'g'ri "faol" chiqdi.
+
+**Diqqat:** qidiruv TARTIBI (Platniy/Ligotniy ikkalasini ham to'liq tekshirib, eng
+yaxshi/eng uzoq sanani tanlash) allaqachon to'g'ri ishlar edi — bu muammo emas edi.
+Asosiy xato INN va sarlavha solishtirishning haddan tashqari qattiqligida edi.
